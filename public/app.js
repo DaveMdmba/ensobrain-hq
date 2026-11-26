@@ -62,8 +62,9 @@ const ago=iso=>{const m=Math.max(0,Math.round((Date.now()-new Date(iso))/60000))
 const visible=()=>work().filter(t=>(own==='all'||t.owner===own)&&(area==='all'||t.area===area)&&(!q||((t.title||'')+' '+(t.notes||'')).toLowerCase().includes(q)));
 const byDue=a=>a.slice().sort((x,y)=>(x.due||'9999').localeCompare(y.due||'9999')||(x.created||'').localeCompare(y.created||''));
 const dueHtml=t=>t.due?`<span class="due${overdue(t)?' late':''}">${overdue(t)?'Overdue · ':'Due '}${esc(fmt(t.due))}</span>`:'';
-const who=o=>o?`<span class="who ${o==='David'?'dv':'dk'}">${esc(o)}</span>`:'';
-const card=t=>`<article class="card" draggable="true" data-id="${esc(t.id)}" tabindex="0" aria-label="${esc(t.title)}"><h3>${esc(t.title)}</h3><div class="meta">${t.blocked?'<span class="tag blk">Blocked</span>':''}${t.area?`<span class="tag">${esc(t.area)}</span>`:''}${t.priority==='High'?'<span class="tag hi">High</span>':''}${dueHtml(t)}${who(t.owner)}</div><select class="mv" data-mv-id="${esc(t.id)}" aria-label="Move to another column"><option value="" selected disabled>Move to…</option>${ST.filter(x=>x[0]!==t.status).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></article>`;
+const who=o=>o?`<span class="who ${o==='David'?'dv':'dk'}"><i aria-hidden="true">${o==='David'?'DA':'DM'}</i>${esc(o)}</span>`:'';
+const areaTag=a=>a?`<span class="tag a${AREAS.indexOf(a)}">${esc(a)}</span>`:'';
+const card=t=>`<article class="card" draggable="true" data-id="${esc(t.id)}" tabindex="0" aria-label="${esc(t.title)}"><h3>${esc(t.title)}</h3><div class="meta">${t.blocked?'<span class="tag blk">Blocked</span>':''}${areaTag(t.area)}${t.priority==='High'?'<span class="tag hi">High</span>':''}${dueHtml(t)}${who(t.owner)}</div><select class="mv" data-mv-id="${esc(t.id)}" aria-label="Move to another column"><option value="" selected disabled>Move to…</option>${ST.filter(x=>x[0]!==t.status).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></article>`;
 
 function kpis(){$('#kpis').hidden=view!=='board';if(view!=='board')return;const w=work(),wk=monday(today());
  const nd=w.filter(t=>t.status==='needs').length,od=w.filter(overdue).length,nb=w.filter(t=>t.blocked&&t.status!=='done').length;
@@ -83,7 +84,7 @@ function board(){const v=visible();return `<div class="board">${ST.map(([k,l])=>
 const COLS=[['title','Task'],['status','Status'],['owner','Owner'],['area','Area'],['priority','Priority'],['due','Due']];
 const key=(t,k)=>k==='status'?ST.findIndex(s=>s[0]===t.status):k==='priority'?(t.priority?PRI.indexOf(t.priority):9):(t[k]||'~').toString().toLowerCase();
 function table(){const v=visible().sort((a,b)=>{const x=key(a,sortK),y=key(b,sortK);return (x<y?-1:x>y?1:0)*sortD});
- return `<table class="stack"><thead><tr>${COLS.map(([k,l])=>`<th><button data-sort="${k}">${l}${sortK===k?(sortD>0?' ↑':' ↓'):''}</button></th>`).join('')}</tr></thead><tbody>${v.map(t=>`<tr data-id="${esc(t.id)}"><td><strong>${esc(t.title)}</strong>${t.blocked?' <span class="tag blk">Blocked</span>':''}</td><td><select class="s-${esc(t.status)}" data-st-id="${esc(t.id)}" aria-label="Status">${ST.map(([k,l])=>`<option value="${k}"${t.status===k?' selected':''}>${l}</option>`).join('')}</select></td><td>${who(t.owner)}</td><td>${esc(t.area)}</td><td>${esc(t.priority)}</td><td>${dueHtml(t)}</td></tr>`).join('')||`<tr><td colspan="6" class="empty">No tasks match.</td></tr>`}</tbody></table>${archived()}`}
+ return `<table class="stack"><thead><tr>${COLS.map(([k,l])=>`<th><button data-sort="${k}">${l}${sortK===k?(sortD>0?' ↑':' ↓'):''}</button></th>`).join('')}</tr></thead><tbody>${v.map(t=>`<tr data-id="${esc(t.id)}"><td><strong>${esc(t.title)}</strong>${t.blocked?' <span class="tag blk">Blocked</span>':''}</td><td><select class="s-${esc(t.status)}" data-st-id="${esc(t.id)}" aria-label="Status">${ST.map(([k,l])=>`<option value="${k}"${t.status===k?' selected':''}>${l}</option>`).join('')}</select></td><td>${who(t.owner)}</td><td>${areaTag(t.area)}</td><td>${t.priority==='High'?'<span class="tag hi">High</span>':esc(t.priority)}</td><td>${dueHtml(t)}</td></tr>`).join('')||`<tr><td colspan="6" class="empty">No tasks match.</td></tr>`}</tbody></table>${archived()}`}
 // Archived tasks are kept, out of the way, and can be brought back.
 function archived(){const a=tasks.filter(t=>t.archived);if(!a.length)return '';
  return `<details class="arch"><summary>Archived (${a.length})</summary><ul class="bdl">${a.map(t=>`<li><div><strong>${esc(t.title)}</strong><span class="sub">${esc(STL[t.status]||'')}${t.archivedAt?' · archived '+esc(fmt(t.archivedAt)):''}</span></div><div class="act"><button class="btn ghost" data-restore="${esc(t.id)}">Restore</button></div></li>`).join('')}</ul></details>`}
@@ -153,7 +154,7 @@ function render(){if(!ready)return;kpis();tabs();
 function openDrawer(id,preset){const t=id?tasks.find(x=>x.id===id):{title:'',status:preset||'todo',owner:preset==='needs'?'David':myOwner(),area:'',priority:'',due:'',notes:''};if(!t)return;
  editing=id||null;const opt=(arr,v)=>arr.map(o=>`<option value="${esc(o[0])}"${v===o[0]?' selected':''}>${esc(o[1])}</option>`).join('');
  $('#dr').innerHTML=`<form id="df"><h2>${id?'Task details':'New task'}</h2>
- <label class="fld"><span>Task</span><textarea class="t" name="title" maxlength="300" required>${esc(t.title)}</textarea></label>
+ <label class="fld"><span>Task</span><textarea class="t" name="title" maxlength="300" placeholder="Task name" required>${esc(t.title)}</textarea></label>
  <div class="f2"><label class="fld"><span>Status</span><select name="status">${opt([...ST,['braindump','Brain dump']],t.status)}</select></label>
  <label class="fld"><span>Owner</span><select name="owner">${opt([['Dave','Dave'],['David','David']],t.owner)}</select></label>
  <label class="fld"><span>Area</span><select name="area">${opt([['',''],...AREAS.map(a=>[a,a])],t.area||'')}</select></label>
