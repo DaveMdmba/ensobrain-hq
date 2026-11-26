@@ -8,13 +8,16 @@ const ST=[['todo','To do'],['doing','In progress'],['needs','Needs David'],['don
 const AREAS=['Instagram','Funnel & NOVA','Sales calls','Help Bank','Admin','Strategy'];
 const PRI=['High','Medium','Low'];
 const STL=Object.fromEntries([...ST,['braindump','Brain dump']]);
-const VIEWS=[['check-in','Check-in'],['board','Board'],['table','Table'],['brain-dump','Brain dump'],['leads','Leads'],['numbers','Weekly numbers'],['routine','Routine']];
+const VIEWS=[['check-in','Check-in'],['board','Board'],['numbers','Numbers'],['brain-dump','Brain dump']];
+// Older links still work: the list, leads and routine screens now live inside these four.
+const ALIAS={table:'board',leads:'numbers',routine:'check-in'};
 const today=()=>new Date().toLocaleDateString('en-CA');
 const monday=d=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()-((x.getDay()+6)%7));return x.toLocaleDateString('en-CA')};
 const addDays=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toLocaleDateString('en-CA')};
 const fmt=d=>d?new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
 let me=null,ready=false,pending=false,tasks=[],weeks=[],routine=[],leads=[],meta=[],log=[];
-let view='board',q='',own='all',area='all',sortK='due',sortD=1,editing=null;
+let view='check-in',q='',own='all',area='all',sortK='due',sortD=1,editing=null,showOldDone=false;
+let mode='cards';try{if(localStorage.getItem('hq-mode')==='list')mode='list'}catch{}
 
 // On phones the table turns into stacked cards; each cell needs its column label.
 new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true});
@@ -60,7 +63,7 @@ const dueHtml=t=>t.due?`<span class="due${overdue(t)?' late':''}">${overdue(t)?'
 const who=o=>o?`<span class="who ${o==='David'?'dv':'dk'}">${esc(o)}</span>`:'';
 const card=t=>`<article class="card" draggable="true" data-id="${esc(t.id)}" tabindex="0" aria-label="${esc(t.title)}"><h3>${esc(t.title)}</h3><div class="meta">${t.blocked?'<span class="tag blk">Blocked</span>':''}${t.area?`<span class="tag">${esc(t.area)}</span>`:''}${t.priority==='High'?'<span class="tag hi">High</span>':''}${dueHtml(t)}${who(t.owner)}</div><select class="mv" data-mv-id="${esc(t.id)}" aria-label="Move to another column"><option value="" selected disabled>Move to…</option>${ST.filter(x=>x[0]!==t.status).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></article>`;
 
-function kpis(){const w=work(),wk=monday(today()),cur=weeks.find(x=>x.week===wk)||{};
+function kpis(){$('#kpis').hidden=view!=='board';if(view!=='board')return;const w=work(),wk=monday(today()),cur=weeks.find(x=>x.week===wk)||{};
  const nd=w.filter(t=>t.status==='needs').length,od=w.filter(overdue).length,nb=w.filter(t=>t.blocked&&t.status!=='done').length;
  const pair=(a,b)=>(a===''||a==null?'–':a)+(b?` / ${b}`:'');
  const k=[['Needs David',nd,nd?'alert':'','needs'],['Blocked',nb,nb?'alertr':'','blocked'],['Overdue',od,od?'alert':'','late'],['Done this week',w.filter(t=>t.status==='done'&&t.doneAt>=wk).length,'',''],['DMs this week',pair(cur.dms,target(wk,'dmTarget')),'','dms'],['Calls booked',pair(cur.calls,target(wk,'callsTarget')),'','dms']];
@@ -70,9 +73,12 @@ function tabs(){const bd=ideas().length;
 function toolbar(){return `<div class="tool"><input type="search" id="q" placeholder="Search tasks and notes" value="${esc(q)}" aria-label="Search">
 <div class="seg" role="group" aria-label="Owner">${['all','Dave','David'].map(o=>`<button data-own="${o}" class="${own===o?'on':''}">${o==='all'?'Everyone':o}</button>`).join('')}</div>
 <select id="area" aria-label="Area"><option value="all">All areas</option>${AREAS.map(a=>`<option${area===a?' selected':''}>${esc(a)}</option>`).join('')}</select>
+<div class="seg" role="group" aria-label="Layout">${[['cards','Cards'],['list','List']].map(([k,l])=>`<button data-mode="${k}" class="${mode===k?'on':''}">${l}</button>`).join('')}</div>
 <button class="btn" data-new="todo">+ New task</button></div>`}
-function board(){const v=visible();return `<div class="board">${ST.map(([k,l])=>{let items=byDue(v.filter(t=>t.status===k));if(k==='done')items=items.sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||''));
- return `<section class="col" data-st="${k}"><header class="ch"><i class="dot ${k}"></i><h2>${l}</h2><span class="n">${items.length}</span></header><div class="list">${items.map(card).join('')||'<p class="empty">Nothing here</p>'}</div><form class="qa" data-st="${k}"><input name="t" placeholder="+ Add to ${l}" aria-label="Add a task to ${l}" autocomplete="off" maxlength="300"></form></section>`}).join('')}</div>`}
+function board(){const v=visible();return `<div class="board">${ST.map(([k,l])=>{let items=byDue(v.filter(t=>t.status===k));const n=items.length;let more='';
+ if(k==='done'){items=items.sort((a,b)=>(b.doneAt||'').localeCompare(a.doneAt||''));const cut=addDays(today(),-7),old=items.filter(t=>(t.doneAt||'')<cut).length;
+  if(old&&!showOldDone)items=items.filter(t=>(t.doneAt||'')>=cut);if(old)more=`<button class="link" data-olddone>${showOldDone?'Hide older':'Show '+old+' older'}</button>`}
+ return `<section class="col" data-st="${k}"><header class="ch"><i class="dot ${k}"></i><h2>${l}</h2><span class="n">${n}</span></header><div class="list">${items.map(card).join('')||`<p class="empty">${k==='done'&&n?'Nothing finished in the last 7 days':'Nothing here'}</p>`}${more}</div><form class="qa" data-st="${k}"><input name="t" placeholder="+ Add to ${l}" aria-label="Add a task to ${l}" autocomplete="off" maxlength="300"></form></section>`}).join('')}</div>`}
 const COLS=[['title','Task'],['status','Status'],['owner','Owner'],['area','Area'],['priority','Priority'],['due','Due']];
 const key=(t,k)=>k==='status'?ST.findIndex(s=>s[0]===t.status):k==='priority'?(t.priority?PRI.indexOf(t.priority):9):(t[k]||'~').toString().toLowerCase();
 function table(){const v=visible().sort((a,b)=>{const x=key(a,sortK),y=key(b,sortK);return (x<y?-1:x>y?1:0)*sortD});
@@ -114,10 +120,11 @@ function checkinV(){const w=work(),wk=monday(today()),cur=weeks.find(x=>x.week==
  const st=leads.filter(x=>x.id!=='_meta').sort((a,b)=>(a.order||0)-(b.order||0)).map(x=>({n:(+x.open||0)+(+x.won||0),name:x.name})).filter(x=>x.n>0);
  return `<div class="ci"><div class="cihead"><p>${ci.last?'Last check-in: '+esc(fmtDT(ci.last))+'.':'No check-in saved yet, so this shows the last 7 days.'}</p><button class="btn" id="cidone">Finish check-in</button></div>
  <div class="grid2"><section class="panel"><h2>This week’s numbers</h2>${goal('DM conversations','dms','dmTarget')}${goal('Sales calls booked','calls','callsTarget')}${cur?'':`<p><button class="btn ghost" data-addweek="${esc(wk)}">Start this week’s numbers</button></p>`}</section>
- ${st.length?`<section class="panel"><h2>Leads</h2><ul class="mini">${st.map(x=>`<li><span>${esc(x.name)}</span><b>${esc(x.n)}</b></li>`).join('')}</ul><p><a class="link" href="#leads">See all leads</a></p></section>`:''}</div>
+ ${st.length?`<section class="panel"><h2>Leads</h2><ul class="mini">${st.map(x=>`<li><span>${esc(x.name)}</span><b>${esc(x.n)}</b></li>`).join('')}</ul><p><a class="link" href="#numbers">See all leads</a></p></section>`:''}</div>
  <div class="cig">${list('Wins',wins,'Nothing finished since the last check-in.','')}${list('Needs David',needs,'Nothing is waiting on David.','pk')}${list('Blocked',stuck,'Nothing is blocked.','rd')}${list('Overdue',late,'Nothing is overdue.','')}</div>
- <section class="panel"><h2>Recent activity</h2>${log.length?`<ul class="act2">${log.slice(0,12).map(x=>`<li><span><strong>${esc(x.who)}</strong> ${esc(x.text)}</span><small>${esc(ago(x.at))}</small></li>`).join('')}</ul>`:'<p class="empty">Nothing yet.</p>'}</section></div>`}
-function routineV(){const t=today();return `<ul class="rt">${routine.slice().sort((a,b)=>(a.order||0)-(b.order||0)).map(r=>{const d=r.lastDone===t;return `<li class="${d?'ok':''}"><div><strong>${esc(r.name)}</strong> <span class="sub">· ${esc(r.freq)}</span></div><p>${esc(r.covers)}</p><span class="sub">${r.lastDone?'Last done '+esc(fmt(r.lastDone)):'Not logged yet'}</span><button class="btn${d?' ghost':''}" data-rid="${esc(r.id)}">${d?'Done today ✓ (undo)':'Mark done today'}</button></li>`}).join('')||'<li class="empty">No routine items yet.</li>'}</ul>`}
+ <section class="panel"><h2>Recent activity</h2>${log.length?`<ul class="act2">${log.slice(0,12).map(x=>`<li><span><strong>${esc(x.who)}</strong> ${esc(x.text)}</span><small>${esc(ago(x.at))}</small></li>`).join('')}</ul>`:'<p class="empty">Nothing yet.</p>'}</section>${routineBox()}</div>`}
+function routineBox(){const t=today(),r=routine.slice().sort((a,b)=>(a.order||0)-(b.order||0));if(!r.length)return '';
+ return `<section class="panel"><h2>Routine checks <span class="n">${r.filter(x=>x.lastDone===t).length} of ${r.length} done today</span></h2><ul class="rm">${r.map(x=>{const d=x.lastDone===t;return `<li><span><strong>${esc(x.name)}</strong><small>${esc(x.freq)}${x.lastDone?' · last done '+esc(fmt(x.lastDone)):''}</small></span><button class="btn ghost" data-rid="${esc(x.id)}">${d?'Done today ✓':'Mark done'}</button></li>`}).join('')}</ul></section>`}
 
 function render(){if(!ready)return;kpis();tabs();
  // Don't redraw under someone who is typing; redraw when they leave the field.
@@ -126,7 +133,7 @@ function render(){if(!ready)return;kpis();tabs();
  if(inMain&&!quick&&a.matches('input:not([type=search]),textarea')){pending=true;return}pending=false;
  const hadQ=a&&a.id==='q',pos=hadQ?a.selectionStart:0;
  let h='';
- if(view==='check-in')h=checkinV();else if(view==='board')h=toolbar()+board();else if(view==='table')h=toolbar()+table();else if(view==='brain-dump')h=brain();else if(view==='leads')h=leadsV();else if(view==='numbers')h=numbers();else h=routineV();
+ if(view==='check-in')h=checkinV();else if(view==='board')h=toolbar()+(mode==='list'?table():board());else if(view==='numbers')h=`${numbers()}<div class="lsec">${leadsV()}</div>`;else h=brain();
  $('#main').innerHTML=h;if(hadQ){const i=$('#q');if(i){i.focus();i.setSelectionRange(pos,pos)}}
  if(quick){const i=quick==='bdf'?$('#bdf input'):$(`.qa[data-st="${quick}"] input`);if(i)i.focus()}}
 
@@ -175,13 +182,15 @@ async function boot(){if(linkCode&&linkName)await enter(linkCode,linkName);else 
 // ---- events ----
 document.addEventListener('click',async e=>{const el=e.target;
  if(el.id==='signout'){try{await api('POST','/api/logout')}catch{}showAuth();return}
- const kp=el.closest('.kpi');if(kp){const g=kp.dataset.go;if(g==='dms')location.hash='numbers';else if(g==='needs'||g==='doing'){own='all';area='all';q='';if(location.hash==='#board'||!location.hash)render();location.hash='board'}else if(g==='blocked'){location.hash='check-in'}else if(g==='late'){sortK='due';sortD=1;if(location.hash==='#table')render();location.hash='table'}return}
+ const kp=el.closest('.kpi');if(kp){const g=kp.dataset.go;if(g==='dms')location.hash='numbers';else if(g==='needs'||g==='doing'){own='all';area='all';q='';if(location.hash==='#board'||!location.hash)render();location.hash='board'}else if(g==='blocked'){location.hash='check-in'}else if(g==='late'){mode='list';sortK='due';sortD=1;render()}return}
  if(el.closest('[data-close]')||el.id==='ov'){closeDrawer();return}
- if(el.id==='del'){const id=editing;if(await saveTask(id,{archived:true,archivedAt:today()})){closeDrawer();toast('Archived. You can restore it from the Table view.')}return}
+ if(el.id==='del'){const id=editing;if(await saveTask(id,{archived:true,archivedAt:today()})){closeDrawer();toast('Archived. You can restore it from the Board’s List layout.')}return}
  const rs=el.closest('[data-restore]');if(rs){if(await saveTask(rs.dataset.restore,{archived:false,archivedAt:''}))toast('Restored');return}
  if(el.id==='cidone'){const ci=meta.find(x=>x.id==='checkin')||{};if(await write(()=>api('PUT','/api/items/meta/checkin',{last:new Date().toISOString(),prev:ci.last||''})))toast('Check-in saved. Wins start fresh from now.');return}
  const aw=el.closest('[data-addweek]');if(aw){const wk=aw.dataset.addweek;await write(()=>api('PUT','/api/items/weeks/w'+wk,newWeek(wk)));return}
  const o=el.closest('[data-own]');if(o){own=o.dataset.own;render();return}
+ const md=el.closest('[data-mode]');if(md){mode=md.dataset.mode;try{localStorage.setItem('hq-mode',mode)}catch{}render();return}
+ if(el.closest('[data-olddone]')){showOldDone=!showOldDone;render();return}
  const nw=el.closest('[data-new]');if(nw){openDrawer(null,nw.dataset.new);return}
  const s=el.closest('[data-sort]');if(s){const k=s.dataset.sort;if(sortK===k)sortD*=-1;else{sortK=k;sortD=1}render();return}
  const pr=el.closest('[data-promote]');if(pr){if(await saveTask(pr.dataset.promote,{status:'todo'}))toast('Moved to To do on the board');return}
@@ -217,8 +226,9 @@ document.addEventListener('drop',async e=>{const col=e.target.closest&&e.target.
  const id=dragId,st=col.dataset.st;dragId=null;const t=tasks.find(x=>x.id===id);if(t&&t.status!==st)await saveTask(id,{status:st})});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&me)refresh().catch(()=>{})});
 
-const route=()=>{const h=location.hash.slice(1);view=VIEWS.some(v=>v[0]===h)?h:'board';render()};
+const pick=()=>{let h=location.hash.slice(1);if(h==='table')mode='list';h=ALIAS[h]||h;return VIEWS.some(v=>v[0]===h)?h:'check-in'};
+const route=()=>{view=pick();render()};
 window.addEventListener('hashchange',route);
-{const h=location.hash.slice(1);if(VIEWS.some(v=>v[0]===h))view=h}
+view=pick();
 boot();
 }

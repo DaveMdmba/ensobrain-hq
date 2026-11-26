@@ -1,5 +1,5 @@
 /* Ensobrain look: white page, ink #111, Oswald headlines + Inter, pink #e889b4 as the only accent. */
-:root{color-scheme:light dark;--red:light-dark(#b3261e,#ffb4ab);--redbg:light-dark(#fdecea,#3b1d1a);
+:root{color-scheme:light;--red:light-dark(#b3261e,#ffb4ab);--redbg:light-dark(#fdecea,#3b1d1a);
 --bg:light-dark(#ffffff,#111111);--card:light-dark(#ffffff,#1b1b1b);--col:light-dark(#f4f4f4,#181818);--ink:light-dark(#111111,#f4f4f4);--mute:light-dark(#4a4a4a,#b5b5b5);--soft:light-dark(#8a8a8a,#8a8a8a);--line:light-dark(#e4e4e4,#2c2c2c);
 --pink:#e889b4;--pinkbg:light-dark(#fdf0f6,#3a2230);--pinkT:light-dark(#9c2c61,#f4b6d2);--btn:light-dark(#111111,#f4f4f4);--btnT:light-dark(#ffffff,#111111);--fill:light-dark(#111111,#f4f4f4);
 --todo:light-dark(#f4f4f4,#262626);--todoT:light-dark(#4a4a4a,#d0d0d0);
@@ -156,3 +156,14 @@ table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-bl
  .tabs{margin-top:10px}.tab{padding:10px 12px}
  main{padding-top:14px}
 }
+/* Tidy-up: always the light Ensobrain look, a shorter header, four tabs. */
+.hd{padding-top:14px}.top{align-items:center}.top h1{font-size:clamp(24px,2.6vw,32px)}.top .eb{font-size:11.5px;margin-bottom:2px}
+.right{flex-direction:row;align-items:center;gap:14px}
+.kpis{margin-top:12px;gap:8px}.kpi{padding:8px 14px;border-radius:12px}.kpi b{font-size:24px}.kpi span{font-size:12.5px}
+.tabs{margin-top:8px}
+.lsec{margin-top:16px}.lsec .lp{max-width:none}
+.list .link{align-self:center;font-size:13px;color:var(--mute)}
+.rm{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:0 24px}
+.rm li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14.5px}
+.rm small{display:block;color:var(--soft);font-size:12.5px}.rm .btn{min-height:36px;padding:0 14px;font-size:13px;flex:none}
+@media(max-width:600px){.right{width:auto}.top h1{font-size:24px}}
