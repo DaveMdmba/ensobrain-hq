@@ -16,6 +16,12 @@ create table if not exists hq_items (
   updated_by text,
   primary key (kind, id)
 );
+create table if not exists hq_log (
+  id bigserial primary key,
+  at timestamptz not null default now(),
+  who text not null,
+  text text not null
+);
 `;
 
 export class PgStore {
@@ -60,6 +66,22 @@ export class PgStore {
   async listItems() {
     const r = await this.pool.query('select kind, id, data from hq_items order by kind, id');
     return r.rows;
+  }
+
+  async getItem(kind, id) {
+    const r = await this.pool.query('select data from hq_items where kind = $1 and id = $2', [kind, id]);
+    return r.rows[0] ? r.rows[0].data : null;
+  }
+
+  // Activity log: one short line per change, newest 500 kept.
+  async addLog(who, text) {
+    await this.pool.query('insert into hq_log (who, text) values ($1, $2)', [who, text]);
+    await this.pool.query('delete from hq_log where id <= (select max(id) from hq_log) - 500');
+  }
+
+  async listLog(limit) {
+    const r = await this.pool.query('select at, who, text from hq_log order by id desc limit $1', [limit]);
+    return r.rows.map((x) => ({ at: new Date(x.at).toISOString(), who: x.who, text: x.text }));
   }
 
   async putItem(kind, id, data, by) {
@@ -109,6 +131,18 @@ export class MemoryStore {
         const i = k.indexOf('/');
         return { kind: k.slice(0, i), id: k.slice(i + 1), data };
       });
+  }
+  async getItem(kind, id) {
+    const v = this.items.get(kind + '/' + id);
+    return v ? { ...v } : null;
+  }
+  async addLog(who, text) {
+    this.log = this.log || [];
+    this.log.push({ at: new Date().toISOString(), who, text });
+    if (this.log.length > 500) this.log.shift();
+  }
+  async listLog(limit) {
+    return (this.log || []).slice(-limit).reverse();
   }
   async putItem(kind, id, data) {
     this.items.set(kind + '/' + id, { ...data });

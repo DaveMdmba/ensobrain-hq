@@ -21,7 +21,7 @@ const ACCESS_CODE = process.env.ACCESS_CODE || '';
 const CODE_OK = ACCESS_CODE.length >= 12;
 const SESSION_DAYS = 365;
 const COOKIE = 'hq_session';
-const KINDS = new Set(['tasks', 'weeks', 'routine', 'leads']);
+const KINDS = new Set(['tasks', 'weeks', 'routine', 'leads', 'meta']);
 const ID_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
 const MAX_BODY = 64 * 1024;
@@ -174,6 +174,56 @@ function cleanData(body) {
   return out;
 }
 
+// ---- activity log: one plain sentence per change, or null for changes not worth a line ----
+const STATUS_LABEL = { todo: 'To do', doing: 'In progress', needs: 'Needs David', done: 'Done', braindump: 'Brain dump' };
+const WEEK_FIELDS = { dms: 'DM conversations', calls: 'calls booked', dmTarget: 'the DM target', callsTarget: 'the calls target' };
+const short = (v) => {
+  const t = String(v || '').trim();
+  return t.length > 80 ? t.slice(0, 77) + '…' : t;
+};
+const weekLabel = (w) => {
+  const d = new Date(String(w) + 'T12:00:00Z');
+  return Number.isNaN(d.getTime()) ? String(w) : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+};
+function describe(kind, id, method, old, data) {
+  if (kind === 'tasks') {
+    const title = `“${short((data && data.title) || (old && old.title) || 'a task')}”`;
+    if (method === 'DELETE') return old ? `deleted ${title}` : null;
+    if (!old) return `added ${title} to ${STATUS_LABEL[data.status] || 'the board'}`;
+    if ('archived' in data && Boolean(data.archived) !== Boolean(old.archived)) {
+      return data.archived ? `archived ${title}` : `restored ${title}`;
+    }
+    if ('status' in data && data.status !== old.status) return `moved ${title} to ${STATUS_LABEL[data.status] || data.status}`;
+    if ('blocked' in data && Boolean(data.blocked) !== Boolean(old.blocked)) {
+      return data.blocked ? `flagged ${title} as blocked` : `unblocked ${title}`;
+    }
+    return `edited ${title}`;
+  }
+  if (kind === 'weeks') {
+    if (method === 'DELETE') return null;
+    const week = weekLabel((data && data.week) || (old && old.week) || id.replace(/^w/, ''));
+    if (!old) return `added the week of ${week}`;
+    const parts = [];
+    for (const [f, label] of Object.entries(WEEK_FIELDS)) {
+      if (f in data && data[f] !== old[f] && data[f] !== '') parts.push(`${label} to ${data[f]}`);
+    }
+    return parts.length ? `set ${parts.join(' and ')} for the week of ${week}` : null;
+  }
+  if (kind === 'routine') {
+    if (data && data.lastDone && (!old || data.lastDone !== old.lastDone)) {
+      return `checked off “${short((old && old.name) || data.name)}”`;
+    }
+    return null;
+  }
+  if (kind === 'leads') return id === '_meta' && method !== 'DELETE' ? 'refreshed the lead numbers from NOVA' : null;
+  if (kind === 'meta') return id === 'checkin' && method !== 'DELETE' ? 'finished a check-in' : null;
+  return null;
+}
+async function record(user, kind, id, method, old, data) {
+  const text = describe(kind, id, method, old, data);
+  if (text) await store.addLog(user.name, text);
+}
+
 // ---- live updates ----------------------------------------------------------
 let version = Date.now();
 const listeners = new Set();
@@ -250,11 +300,24 @@ async function handle(req, res) {
   if (!user) return send(req, res, 401, { error: 'Open the board with your private link first.' });
 
   if (p === '/api/state' && method === 'GET') {
-    const state = { version, me: user, tasks: [], weeks: [], routine: [], leads: [] };
+    const state = { version, me: user, tasks: [], weeks: [], routine: [], leads: [], meta: [] };
     for (const row of await store.listItems()) {
       if (KINDS.has(row.kind)) state[row.kind].push({ ...row.data, id: row.id });
     }
+    state.log = await store.listLog(25);
     return send(req, res, 200, state);
+  }
+
+  // A full copy of the board's data, as a file to keep.
+  if (p === '/api/export' && method === 'GET') {
+    const body = JSON.stringify({ exportedAt: new Date().toISOString(), items: await store.listItems() }, null, 2);
+    res.writeHead(200, {
+      ...securityHeaders(req),
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Content-Disposition': `attachment; filename="hq-backup-${new Date().toISOString().slice(0, 10)}.json"`,
+    });
+    return res.end(body);
   }
 
   if (p === '/api/events' && method === 'GET') {
@@ -278,8 +341,11 @@ async function handle(req, res) {
     const id = m[2];
     if (id !== undefined && !ID_RE.test(id)) return send(req, res, 400, { error: 'Bad id' });
 
+    const old = id ? await store.getItem(kind, id) : null;
+
     if (method === 'DELETE' && id) {
       await store.deleteItem(kind, id);
+      await record(user, kind, id, 'DELETE', old, null);
       broadcast();
       return send(req, res, 200, { ok: true });
     }
@@ -291,17 +357,20 @@ async function handle(req, res) {
       if (method === 'POST' && !id) {
         const newId = crypto.randomBytes(9).toString('base64url');
         await store.putItem(kind, newId, data, user.name);
+        await record(user, kind, newId, 'POST', null, data);
         broadcast();
         return send(req, res, 201, { id: newId });
       }
       if (method === 'PUT' && id) {
         await store.putItem(kind, id, data, user.name);
+        await record(user, kind, id, 'PUT', old, data);
         broadcast();
         return send(req, res, 200, { id });
       }
       if (method === 'PATCH' && id) {
         const found = await store.mergeItem(kind, id, data, user.name);
         if (!found) return send(req, res, 404, { error: 'That item no longer exists.' });
+        await record(user, kind, id, 'PATCH', old, data);
         broadcast();
         return send(req, res, 200, { id });
       }

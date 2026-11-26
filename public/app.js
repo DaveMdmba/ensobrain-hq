@@ -7,13 +7,14 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const ST=[['todo','To do'],['doing','In progress'],['needs','Needs David'],['done','Done']];
 const AREAS=['Instagram','Funnel & NOVA','Sales calls','Help Bank','Admin','Strategy'];
 const PRI=['High','Medium','Low'];
-const VIEWS=[['board','Board'],['table','Table'],['brain-dump','Brain dump'],['leads','Leads'],['numbers','Weekly numbers'],['routine','Routine']];
+const STL=Object.fromEntries([...ST,['braindump','Brain dump']]);
+const VIEWS=[['check-in','Check-in'],['board','Board'],['table','Table'],['brain-dump','Brain dump'],['leads','Leads'],['numbers','Weekly numbers'],['routine','Routine']];
 const today=()=>new Date().toLocaleDateString('en-CA');
 const monday=d=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()-((x.getDay()+6)%7));return x.toLocaleDateString('en-CA')};
 const addDays=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toLocaleDateString('en-CA')};
 const fmt=d=>d?new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
-let me=null,ready=false,pending=false,tasks=[],weeks=[],routine=[],leads=[];
-let view='board',q='',own='all',area='all',sortK='due',sortD=1,editing=null,confirmDel=false;
+let me=null,ready=false,pending=false,tasks=[],weeks=[],routine=[],leads=[],meta=[],log=[];
+let view='board',q='',own='all',area='all',sortK='due',sortD=1,editing=null;
 
 // On phones the table turns into stacked cards; each cell needs its column label.
 new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true});
@@ -30,7 +31,7 @@ async function api(method,url,body){
 let seq=0;
 async function refresh(){const n=++seq;
  try{const s=await api('GET','/api/state');if(n!==seq)return true;
-  me=s.me;tasks=s.tasks;weeks=s.weeks;routine=s.routine;leads=s.leads||[];ready=true;$('#me').textContent=me.name;render();
+  me=s.me;tasks=s.tasks;weeks=s.weeks;routine=s.routine;leads=s.leads||[];meta=s.meta||[];log=s.log||[];ready=true;$('#me').textContent=me.name;render();
   if(editing&&!tasks.some(t=>t.id===editing))closeDrawer();return true}
  catch(e){if(e.status===401){showAuth();return false}throw e}}
 // Runs one change, then reloads the board. Returns true when it saved.
@@ -38,26 +39,31 @@ async function write(fn){
  try{await fn();await refresh();return true}
  catch(e){if(e.status===401)showAuth();else if(e.status===404||e.status===400){toast(e.message);refresh().catch(()=>{})}else toast('Couldn’t save. Check your connection and try again.');return false}}
 const saveTask=(id,data)=>write(()=>{const now=new Date().toISOString();data.updated=now;
- if('status'in data){if(data.status==='done'){const old=tasks.find(t=>t.id===id);if(!old||old.status!=='done')data.doneAt=today()}else data.doneAt=''}
+ if('status'in data){if(data.status==='done'){const old=tasks.find(t=>t.id===id);if(!old||old.status!=='done'){data.doneAt=today();data.doneTs=now}}else{data.doneAt='';data.doneTs=''}}
  if(id)return api('PATCH','/api/items/tasks/'+encodeURIComponent(id),data);
  data.created=now;return api('POST','/api/items/tasks',data)});
 const myOwner=()=>/^david/i.test(me?.name||'')?'David':'Dave';
 
 // ---- views ----
 const overdue=t=>t.due&&t.status!=='done'&&t.status!=='braindump'&&t.due<today();
-const work=()=>tasks.filter(t=>t.status!=='braindump');
+const work=()=>tasks.filter(t=>t.status!=='braindump'&&!t.archived);
+const ideas=()=>tasks.filter(t=>t.status==='braindump'&&!t.archived);
+// A new week starts with the previous week's targets, so they only need setting once.
+const newWeek=wk=>{const prev=weeks.filter(w=>w.week<wk).sort((a,b)=>a.week.localeCompare(b.week)).pop()||{};return {week:wk,dms:'',dmTarget:prev.dmTarget??'',calls:'',callsTarget:prev.callsTarget??'',notes:''}};
+const fmtDT=iso=>new Date(iso).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+const ago=iso=>{const m=Math.max(0,Math.round((Date.now()-new Date(iso))/60000));return m<1?'just now':m<60?m+'m ago':m<1440?Math.round(m/60)+'h ago':Math.round(m/1440)+'d ago'};
 const visible=()=>work().filter(t=>(own==='all'||t.owner===own)&&(area==='all'||t.area===area)&&(!q||((t.title||'')+' '+(t.notes||'')).toLowerCase().includes(q)));
 const byDue=a=>a.slice().sort((x,y)=>(x.due||'9999').localeCompare(y.due||'9999')||(x.created||'').localeCompare(y.created||''));
 const dueHtml=t=>t.due?`<span class="due${overdue(t)?' late':''}">${overdue(t)?'Overdue · ':'Due '}${esc(fmt(t.due))}</span>`:'';
 const who=o=>o?`<span class="who ${o==='David'?'dv':'dk'}">${esc(o)}</span>`:'';
-const card=t=>`<article class="card" draggable="true" data-id="${esc(t.id)}" tabindex="0" aria-label="${esc(t.title)}"><h3>${esc(t.title)}</h3><div class="meta">${t.area?`<span class="tag">${esc(t.area)}</span>`:''}${t.priority==='High'?'<span class="tag hi">High</span>':''}${dueHtml(t)}${who(t.owner)}</div></article>`;
+const card=t=>`<article class="card" draggable="true" data-id="${esc(t.id)}" tabindex="0" aria-label="${esc(t.title)}"><h3>${esc(t.title)}</h3><div class="meta">${t.blocked?'<span class="tag blk">Blocked</span>':''}${t.area?`<span class="tag">${esc(t.area)}</span>`:''}${t.priority==='High'?'<span class="tag hi">High</span>':''}${dueHtml(t)}${who(t.owner)}</div><select class="mv" data-mv-id="${esc(t.id)}" aria-label="Move to another column"><option value="" selected disabled>Move to…</option>${ST.filter(x=>x[0]!==t.status).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></article>`;
 
 function kpis(){const w=work(),wk=monday(today()),cur=weeks.find(x=>x.week===wk)||{};
- const nd=w.filter(t=>t.status==='needs').length,od=w.filter(overdue).length;
+ const nd=w.filter(t=>t.status==='needs').length,od=w.filter(overdue).length,nb=w.filter(t=>t.blocked&&t.status!=='done').length;
  const pair=(a,b)=>(a===''||a==null?'–':a)+(b?` / ${b}`:'');
- const k=[['Needs David',nd,nd?'alert':'','needs'],['In progress',w.filter(t=>t.status==='doing').length,'','doing'],['Overdue',od,od?'alert':'','late'],['Done this week',w.filter(t=>t.status==='done'&&t.doneAt>=wk).length,'',''],['DMs this week',pair(cur.dms,cur.dmTarget),'','dms'],['Calls booked',pair(cur.calls,cur.callsTarget),'','dms']];
+ const k=[['Needs David',nd,nd?'alert':'','needs'],['Blocked',nb,nb?'alertr':'','blocked'],['Overdue',od,od?'alert':'','late'],['Done this week',w.filter(t=>t.status==='done'&&t.doneAt>=wk).length,'',''],['DMs this week',pair(cur.dms,cur.dmTarget),'','dms'],['Calls booked',pair(cur.calls,cur.callsTarget),'','dms']];
  $('#kpis').innerHTML=k.map(([l,v,c,go])=>`<button class="kpi ${c}" data-go="${go}"><b>${esc(v)}</b><span>${l}</span></button>`).join('')}
-function tabs(){const bd=tasks.filter(t=>t.status==='braindump').length;
+function tabs(){const bd=ideas().length;
  $('#tabs').innerHTML=VIEWS.map(([k,l])=>`<a class="tab${view===k?' on':''}" href="#${k}">${l}${k==='brain-dump'&&bd?`<em>${bd}</em>`:''}</a>`).join('')}
 function toolbar(){return `<div class="tool"><input type="search" id="q" placeholder="Search tasks and notes" value="${esc(q)}" aria-label="Search">
 <div class="seg" role="group" aria-label="Owner">${['all','Dave','David'].map(o=>`<button data-own="${o}" class="${own===o?'on':''}">${o==='all'?'Everyone':o}</button>`).join('')}</div>
@@ -68,8 +74,11 @@ function board(){const v=visible();return `<div class="board">${ST.map(([k,l])=>
 const COLS=[['title','Task'],['status','Status'],['owner','Owner'],['area','Area'],['priority','Priority'],['due','Due']];
 const key=(t,k)=>k==='status'?ST.findIndex(s=>s[0]===t.status):k==='priority'?(t.priority?PRI.indexOf(t.priority):9):(t[k]||'~').toString().toLowerCase();
 function table(){const v=visible().sort((a,b)=>{const x=key(a,sortK),y=key(b,sortK);return (x<y?-1:x>y?1:0)*sortD});
- return `<table class="stack"><thead><tr>${COLS.map(([k,l])=>`<th><button data-sort="${k}">${l}${sortK===k?(sortD>0?' ↑':' ↓'):''}</button></th>`).join('')}</tr></thead><tbody>${v.map(t=>`<tr data-id="${esc(t.id)}"><td><strong>${esc(t.title)}</strong></td><td><select class="s-${esc(t.status)}" data-st-id="${esc(t.id)}" aria-label="Status">${ST.map(([k,l])=>`<option value="${k}"${t.status===k?' selected':''}>${l}</option>`).join('')}</select></td><td>${who(t.owner)}</td><td>${esc(t.area)}</td><td>${esc(t.priority)}</td><td>${dueHtml(t)}</td></tr>`).join('')||`<tr><td colspan="6" class="empty">No tasks match.</td></tr>`}</tbody></table>`}
-function brain(){const v=tasks.filter(t=>t.status==='braindump').sort((a,b)=>(b.created||'').localeCompare(a.created||''));
+ return `<table class="stack"><thead><tr>${COLS.map(([k,l])=>`<th><button data-sort="${k}">${l}${sortK===k?(sortD>0?' ↑':' ↓'):''}</button></th>`).join('')}</tr></thead><tbody>${v.map(t=>`<tr data-id="${esc(t.id)}"><td><strong>${esc(t.title)}</strong>${t.blocked?' <span class="tag blk">Blocked</span>':''}</td><td><select class="s-${esc(t.status)}" data-st-id="${esc(t.id)}" aria-label="Status">${ST.map(([k,l])=>`<option value="${k}"${t.status===k?' selected':''}>${l}</option>`).join('')}</select></td><td>${who(t.owner)}</td><td>${esc(t.area)}</td><td>${esc(t.priority)}</td><td>${dueHtml(t)}</td></tr>`).join('')||`<tr><td colspan="6" class="empty">No tasks match.</td></tr>`}</tbody></table>${archived()}`}
+// Archived tasks are kept, out of the way, and can be brought back.
+function archived(){const a=tasks.filter(t=>t.archived);if(!a.length)return '';
+ return `<details class="arch"><summary>Archived (${a.length})</summary><ul class="bdl">${a.map(t=>`<li><div><strong>${esc(t.title)}</strong><span class="sub">${esc(STL[t.status]||'')}${t.archivedAt?' · archived '+esc(fmt(t.archivedAt)):''}</span></div><div class="act"><button class="btn ghost" data-restore="${esc(t.id)}">Restore</button></div></li>`).join('')}</ul></details>`}
+function brain(){const v=ideas().sort((a,b)=>(b.created||'').localeCompare(a.created||''));
  return `<div class="bd"><form class="bdf" id="bdf"><input name="t" placeholder="Dump an idea. It stays here until we decide it’s a priority." aria-label="New idea" autocomplete="off" maxlength="300"><button class="btn">Add</button></form>
  <ul class="bdl">${v.map(t=>`<li data-id="${esc(t.id)}"><div><strong>${esc(t.title)}</strong><span class="sub">${esc(t.owner||'')}${t.created?' · added '+esc(fmt(t.created.slice(0,10))):''}</span>${t.notes?`<p>${esc(t.notes)}</p>`:''}</div><div class="act"><button class="btn" data-promote="${esc(t.id)}">Make it a task</button><button class="btn ghost" data-open="${esc(t.id)}">Open</button></div></li>`).join('')||'<li class="empty">No ideas parked. Add one above.</li>'}</ul></div>`}
 function bars(label,f,tf){const w=weeks.slice().sort((a,b)=>a.week.localeCompare(b.week)).slice(-8);
@@ -90,6 +99,22 @@ function leadsV(){const meta=leads.find(x=>x.id==='_meta')||{};const st=leads.fi
  <p class="sub">${esc(meta.total??st.reduce((a,x)=>a+val(x)+(+x.lost||0),0))} leads in total · ${esc(meta.won??0)} won · ${esc(meta.lost??0)} lost${when?' · checked '+esc(when):''}</p>
  ${url?`<p><a class="btn linkbtn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in NOVA</a></p>`:''}
  <p class="sub">Counts only. Names and details stay in NOVA.</p></div>`}
+// One screen for the call: wins since the last check-in, what needs David, what is stuck, and the numbers.
+function checkinV(){const w=work(),wk=monday(today()),cur=weeks.find(x=>x.week===wk),prev=weeks.filter(x=>x.week<wk).sort((a,b)=>a.week.localeCompare(b.week)).pop();
+ const ci=meta.find(x=>x.id==='checkin')||{},since=ci.last||new Date(Date.now()-7*864e5).toISOString();
+ const wins=w.filter(t=>t.status==='done'&&(t.doneTs?t.doneTs>=since:(t.doneAt||'')>=since.slice(0,10)));
+ const needs=byDue(w.filter(t=>t.status==='needs')),stuck=w.filter(t=>t.blocked&&t.status!=='done'),late=byDue(w.filter(overdue));
+ const blank=v=>v===''||v==null;
+ const li=t=>`<li><button class="rowbtn" data-open="${esc(t.id)}"><span>${esc(t.title)}</span>${who(t.owner)}</button>${t.blocked&&t.blocker?`<small>${esc(t.blocker)}</small>`:''}</li>`;
+ const list=(title,items,empty,cls)=>`<section class="panel ${cls}"><h2>${title} <span class="n">${items.length}</span></h2>${items.length?`<ul class="cl">${items.map(li).join('')}</ul>`:`<p class="empty">${empty}</p>`}</section>`;
+ const goal=(label,f,tf)=>{const v=cur?cur[f]:'',t=cur?+cur[tf]||0:0,pct=t?Math.min(100,(+v||0)/t*100):0;
+  return `<div class="goal"><div class="gh"><strong>${label}</strong><span class="gv"><b>${blank(v)?'–':esc(v)}</b>${cur?`<label>of <input type="number" min="0" inputmode="numeric" class="tg" data-wid="${esc(cur.id)}" data-f="${tf}" value="${blank(cur[tf])?'':esc(cur[tf])}" placeholder="target" aria-label="${label} target"></label>`:''}</span></div><div class="bar"><div class="fill" style="width:${pct.toFixed(1)}%"></div></div>${prev&&!blank(prev[f])?`<p class="sub">Last week: ${esc(prev[f])}</p>`:''}</div>`};
+ const st=leads.filter(x=>x.id!=='_meta').sort((a,b)=>(a.order||0)-(b.order||0)).map(x=>({n:(+x.open||0)+(+x.won||0),name:x.name})).filter(x=>x.n>0);
+ return `<div class="ci"><div class="cihead"><p>${ci.last?'Last check-in: '+esc(fmtDT(ci.last))+'.':'No check-in saved yet, so this shows the last 7 days.'}</p><button class="btn" id="cidone">Finish check-in</button></div>
+ <div class="grid2"><section class="panel"><h2>This week’s numbers</h2>${goal('DM conversations','dms','dmTarget')}${goal('Sales calls booked','calls','callsTarget')}${cur?'':`<p><button class="btn ghost" data-addweek="${esc(wk)}">Start this week’s numbers</button></p>`}</section>
+ ${st.length?`<section class="panel"><h2>Leads</h2><ul class="mini">${st.map(x=>`<li><span>${esc(x.name)}</span><b>${esc(x.n)}</b></li>`).join('')}</ul><p><a class="link" href="#leads">See all leads</a></p></section>`:''}</div>
+ <div class="cig">${list('Wins',wins,'Nothing finished since the last check-in.','')}${list('Needs David',needs,'Nothing is waiting on David.','pk')}${list('Blocked',stuck,'Nothing is blocked.','rd')}${list('Overdue',late,'Nothing is overdue.','')}</div>
+ <section class="panel"><h2>Recent activity</h2>${log.length?`<ul class="act2">${log.slice(0,12).map(x=>`<li><span><strong>${esc(x.who)}</strong> ${esc(x.text)}</span><small>${esc(ago(x.at))}</small></li>`).join('')}</ul>`:'<p class="empty">Nothing yet.</p>'}</section></div>`}
 function routineV(){const t=today();return `<ul class="rt">${routine.slice().sort((a,b)=>(a.order||0)-(b.order||0)).map(r=>{const d=r.lastDone===t;return `<li class="${d?'ok':''}"><div><strong>${esc(r.name)}</strong> <span class="sub">· ${esc(r.freq)}</span></div><p>${esc(r.covers)}</p><span class="sub">${r.lastDone?'Last done '+esc(fmt(r.lastDone)):'Not logged yet'}</span><button class="btn${d?' ghost':''}" data-rid="${esc(r.id)}">${d?'Done today ✓ (undo)':'Mark done today'}</button></li>`}).join('')||'<li class="empty">No routine items yet.</li>'}</ul>`}
 
 function render(){if(!ready)return;kpis();tabs();
@@ -99,12 +124,12 @@ function render(){if(!ready)return;kpis();tabs();
  if(inMain&&!quick&&a.matches('input:not([type=search]),textarea')){pending=true;return}pending=false;
  const hadQ=a&&a.id==='q',pos=hadQ?a.selectionStart:0;
  let h='';
- if(view==='board')h=toolbar()+board();else if(view==='table')h=toolbar()+table();else if(view==='brain-dump')h=brain();else if(view==='leads')h=leadsV();else if(view==='numbers')h=numbers();else h=routineV();
+ if(view==='check-in')h=checkinV();else if(view==='board')h=toolbar()+board();else if(view==='table')h=toolbar()+table();else if(view==='brain-dump')h=brain();else if(view==='leads')h=leadsV();else if(view==='numbers')h=numbers();else h=routineV();
  $('#main').innerHTML=h;if(hadQ){const i=$('#q');if(i){i.focus();i.setSelectionRange(pos,pos)}}
  if(quick){const i=quick==='bdf'?$('#bdf input'):$(`.qa[data-st="${quick}"] input`);if(i)i.focus()}}
 
 function openDrawer(id,preset){const t=id?tasks.find(x=>x.id===id):{title:'',status:preset||'todo',owner:preset==='needs'?'David':myOwner(),area:'',priority:'',due:'',notes:''};if(!t)return;
- editing=id||null;confirmDel=false;const opt=(arr,v)=>arr.map(o=>`<option value="${esc(o[0])}"${v===o[0]?' selected':''}>${esc(o[1])}</option>`).join('');
+ editing=id||null;const opt=(arr,v)=>arr.map(o=>`<option value="${esc(o[0])}"${v===o[0]?' selected':''}>${esc(o[1])}</option>`).join('');
  $('#dr').innerHTML=`<form id="df"><h2>${id?'Task details':'New task'}</h2>
  <label class="fld"><span>Task</span><textarea class="t" name="title" maxlength="300" required>${esc(t.title)}</textarea></label>
  <div class="f2"><label class="fld"><span>Status</span><select name="status">${opt([...ST,['braindump','Brain dump']],t.status)}</select></label>
@@ -113,8 +138,10 @@ function openDrawer(id,preset){const t=id?tasks.find(x=>x.id===id):{title:'',sta
  <label class="fld"><span>Priority</span><select name="priority">${opt([['',''],...PRI.map(p=>[p,p])],t.priority||'')}</select></label>
  <label class="fld"><span>Due</span><input type="date" name="due" value="${esc(t.due||'')}"></label></div>
  <label class="fld"><span>Notes</span><textarea name="notes" rows="5" maxlength="3000">${esc(t.notes||'')}</textarea></label>
+ <label class="chk"><input type="checkbox" name="blocked"${t.blocked?' checked':''}><span>Blocked: can’t move forward right now</span></label>
+ <label class="fld"><span>What’s blocking it?</span><input name="blocker" maxlength="200" value="${esc(t.blocker||'')}" placeholder="For example: waiting for the new form questions"></label>
  ${t.updated?`<p class="sub">Last updated ${esc(new Date(t.updated).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}</p>`:''}
- <div class="drb"><button class="btn">Save</button><button type="button" class="btn ghost" data-close>Close</button><span class="sp"></span>${id?'<button type="button" class="btn ghost" id="del">Delete</button>':''}</div></form>`;
+ <div class="drb"><button class="btn">Save</button><button type="button" class="btn ghost" data-close>Close</button><span class="sp"></span>${id?'<button type="button" class="btn ghost" id="del">Archive</button>':''}</div></form>`;
  $('#shell').classList.add('open');setTimeout(()=>{const f=$('#df [name=title]');if(f&&!id)f.focus()},60)}
 function closeDrawer(){$('#shell').classList.remove('open');editing=null;if(pending)render()}
 
@@ -146,10 +173,12 @@ async function boot(){if(linkCode&&linkName)await enter(linkCode,linkName);else 
 // ---- events ----
 document.addEventListener('click',async e=>{const el=e.target;
  if(el.id==='signout'){try{await api('POST','/api/logout')}catch{}showAuth();return}
- const kp=el.closest('.kpi');if(kp){const g=kp.dataset.go;if(g==='dms')location.hash='numbers';else if(g==='needs'||g==='doing'){own='all';area='all';q='';if(location.hash==='#board'||!location.hash)render();location.hash='board'}else if(g==='late'){sortK='due';sortD=1;if(location.hash==='#table')render();location.hash='table'}return}
+ const kp=el.closest('.kpi');if(kp){const g=kp.dataset.go;if(g==='dms')location.hash='numbers';else if(g==='needs'||g==='doing'){own='all';area='all';q='';if(location.hash==='#board'||!location.hash)render();location.hash='board'}else if(g==='blocked'){location.hash='check-in'}else if(g==='late'){sortK='due';sortD=1;if(location.hash==='#table')render();location.hash='table'}return}
  if(el.closest('[data-close]')||el.id==='ov'){closeDrawer();return}
- if(el.id==='del'){if(!confirmDel){confirmDel=true;el.textContent='Confirm delete';el.className='btn warn';return}
-  const id=editing;if(await write(()=>api('DELETE','/api/items/tasks/'+encodeURIComponent(id)))){closeDrawer();toast('Task deleted')}return}
+ if(el.id==='del'){const id=editing;if(await saveTask(id,{archived:true,archivedAt:today()})){closeDrawer();toast('Archived. You can restore it from the Table view.')}return}
+ const rs=el.closest('[data-restore]');if(rs){if(await saveTask(rs.dataset.restore,{archived:false,archivedAt:''}))toast('Restored');return}
+ if(el.id==='cidone'){const ci=meta.find(x=>x.id==='checkin')||{};if(await write(()=>api('PUT','/api/items/meta/checkin',{last:new Date().toISOString(),prev:ci.last||''})))toast('Check-in saved. Wins start fresh from now.');return}
+ const aw=el.closest('[data-addweek]');if(aw){const wk=aw.dataset.addweek;await write(()=>api('PUT','/api/items/weeks/w'+wk,newWeek(wk)));return}
  const o=el.closest('[data-own]');if(o){own=o.dataset.own;render();return}
  const nw=el.closest('[data-new]');if(nw){openDrawer(null,nw.dataset.new);return}
  const s=el.closest('[data-sort]');if(s){const k=s.dataset.sort;if(sortK===k)sortD*=-1;else{sortK=k;sortD=1}render();return}
@@ -158,7 +187,7 @@ document.addEventListener('click',async e=>{const el=e.target;
  const rb=el.closest('[data-rid]');if(rb){const r=routine.find(x=>x.id===rb.dataset.rid);if(!r)return;const t=today();
   const data=r.lastDone===t?{lastDone:r.prevDone||''}:{lastDone:t,prevDone:r.lastDone||''};await write(()=>api('PATCH','/api/items/routine/'+encodeURIComponent(r.id),data));return}
  if(el.id==='addwk'){const last=weeks.map(w=>w.week).sort().pop()||monday(today());const nx=weeks.length?addDays(last,7):last;
-  await write(()=>api('PUT','/api/items/weeks/w'+nx,{week:nx,dms:'',dmTarget:'',calls:'',callsTarget:'',notes:''}));return}
+  await write(()=>api('PUT','/api/items/weeks/w'+nx,newWeek(nx)));return}
  if(el.closest('select')||el.closest('input'))return;
  const c=el.closest('.card,tbody tr[data-id]');if(c){openDrawer(c.dataset.id)}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#shell').classList.contains('open'))closeDrawer();
@@ -167,11 +196,13 @@ document.addEventListener('input',e=>{if(e.target.id==='q'){q=e.target.value.tri
 document.addEventListener('change',async e=>{const el=e.target;
  if(el.id==='area'){area=el.value;render();return}
  if(el.dataset.stId){el.className='s-'+el.value;await saveTask(el.dataset.stId,{status:el.value});return}
+ if(el.dataset.mvId){if(el.value)await saveTask(el.dataset.mvId,{status:el.value});return}
  if(el.dataset.wid){const f=el.dataset.f,v=f==='notes'?el.value:(el.value===''?'':Math.max(0,Number(el.value)||0));await write(()=>api('PATCH','/api/items/weeks/'+encodeURIComponent(el.dataset.wid),{[f]:v}))}});
 document.addEventListener('focusout',()=>setTimeout(()=>{if(pending&&!$('#main').contains(document.activeElement))render()},0));
 document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target;
  if(f.id==='enterf'){const d=Object.fromEntries(new FormData(f));enter(linkCode||d.code||'',d.name||'');return}
  if(f.id==='df'){const d=Object.fromEntries(new FormData(f));d.title=(d.title||'').trim();if(!d.title){toast('Give the task a name');return}
+  d.blocked=!!d.blocked;d.blocker=d.blocked?(d.blocker||'').trim():'';
   if(await saveTask(editing,d)){closeDrawer();toast('Saved')}return}
  if(f.classList.contains('qa')){const v=f.t.value.trim();if(!v)return;const st=f.dataset.st;f.t.value='';
   await saveTask(null,{title:v,status:st,owner:st==='needs'?'David':myOwner(),area:area==='all'?'':area,priority:'',due:'',notes:''});return}
