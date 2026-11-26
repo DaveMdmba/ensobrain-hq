@@ -1,19 +1,18 @@
-/* David x Dave HQ, in Ensobrain's own look (ensobrain.com): black page, white type, a white bar with the logo,
-   wide grotesk lettering and square-ish corners. Roc Grotesk, the site's typeface, is licensed to the site through
-   Adobe Fonts, so the board uses Archivo at a wide setting, the closest free match.
+/* David x Dave HQ, in Ensobrain's black and white: white page, black type, the Ensobrain logo in the top bar,
+   near-square corners. Text is set at normal width so lists stay compact; the wide, heavy lettering that echoes
+   ensobrain.com is kept for headings and figures only. (The site's own typeface, Roc Grotesk, is licensed to the
+   site through Adobe Fonts; Archivo is the closest free match.)
    Colour carries meaning: pink = waiting on David, red = a problem. Everything else is black and white. */
-:root{color-scheme:dark;
---page:#000000;--bg:#0e0e0e;--card:#161616;--field:#161616;--wash:#262626;--ink:#ffffff;--mute:#cfcfcf;--soft:#9c9c9c;--line:#2b2b2b;--line2:#3d3d3d;
---btn:#ffffff;--btnT:#000000;
---pink:#e889b4;--pinkbg:#22101a;--pinkline:#5e2e47;--pinkT:#f4abcc;--red:#ff8375;--redbg:#2e1411;
+:root{color-scheme:light;
+--page:#ffffff;--bg:#ffffff;--card:#ffffff;--field:#ffffff;--hover:#f5f5f5;--wash:#eeeeee;--ink:#000000;--mute:#3d3d3d;--soft:#666666;--line:#e2e2e2;--line2:#cccccc;
+--btn:#000000;--btnT:#ffffff;
+--pink:#e889b4;--pinkbg:#fdf0f6;--pinkline:#f2c6da;--pinkT:#9c2c61;--red:#b3261e;--redbg:#fdecea;
 --r-panel:6px;--r-card:4px;--r-ctl:4px;--r-tag:3px;--gut:max(4vw,16px);--h:36px;--row:40px;
 --display:Archivo,"Arial Black",system-ui,sans-serif;--text:Archivo,-apple-system,system-ui,sans-serif}
-/* The top bar and the sign-in card are white with black type, like the site's header. */
-.lite{color-scheme:light;--bg:#ffffff;--card:#ffffff;--field:#ffffff;--wash:#ededed;--ink:#000000;--mute:#333333;--soft:#5f5f5f;--line:#e2e2e2;--line2:#cfcfcf;--btn:#000000;--btnT:#ffffff;--red:#b3261e;color:var(--ink)}
 /* Fingers need bigger targets than a mouse pointer does. */
 @media(pointer:coarse){:root{--h:44px;--row:44px}}
 *{box-sizing:border-box;min-width:0}
-body{margin:0;background:var(--page);color:var(--ink);font:400 semi-expanded 14px/1.5 var(--text);-webkit-font-smoothing:antialiased;overflow-x:clip}
+body{margin:0;background:var(--page);color:var(--ink);font:400 14px/1.5 var(--text);-webkit-font-smoothing:antialiased;overflow-x:clip}
 h1,h2,h3{font-family:var(--display);font-weight:800;font-stretch:125%;margin:0;line-height:1.15}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
@@ -49,7 +48,7 @@ button{cursor:pointer}
 /* ---- board: summary strip, filters, columns, cards ---- */
 .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:20px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-panel);overflow:hidden}
 .kpi{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border:0;border-left:1px solid var(--line);background:none;color:var(--ink);text-align:left}
-.kpi:first-child{border-left:0}.kpi:hover{background:var(--card)}
+.kpi:first-child{border-left:0}.kpi:hover{background:var(--hover)}
 .kpi b{font:800 expanded 24px/1.1 var(--display);font-variant-numeric:tabular-nums}
 .kpi span{font-size:12.5px;color:var(--soft)}
 .kpi.alert,.kpi.alert:hover{background:var(--pinkbg)}.kpi.alert b,.kpi.alert span{color:var(--pinkT)}
@@ -67,13 +66,13 @@ main{padding:20px 0 48px}
 .col[data-st=needs]{background:var(--pinkbg)}.col[data-st=needs] .ch h2{color:var(--pinkT)}
 .ch{display:flex;align-items:center;gap:8px;padding:2px 2px 4px}.ch h2{font-size:14px}
 .ch .n{margin-left:auto;font-size:13px;color:var(--soft);font-variant-numeric:tabular-nums}
-.dot{flex:none;width:8px;height:8px;border-radius:50%}.dot.todo{background:#7a7a7a}.dot.doing{background:none;border:2px solid var(--ink)}.dot.needs{background:var(--pink)}.dot.done{background:var(--ink)}
+.dot{flex:none;width:8px;height:8px;border-radius:50%}.dot.todo{background:#b5b5b5}.dot.doing{background:none;border:2px solid var(--ink)}.dot.needs{background:var(--pink)}.dot.done{background:var(--ink)}
 .list{display:flex;flex-direction:column;gap:8px}
 .list .link{align-self:center;color:var(--mute)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);padding:10px 12px;cursor:pointer}
 .card:hover{border-color:var(--ink)}.card.dragging{opacity:.4}
 .col[data-st=needs] .card{border-color:var(--pinkline)}.col[data-st=needs] .card:hover{border-color:var(--pinkT)}
-.card h3{font:500 semi-expanded 14px/1.4 var(--text)}
+.card h3{font:500 14px/1.4 var(--text)}
 .col[data-st=done] .card h3{color:var(--mute)}
 .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
 .tag{font-size:12px;line-height:19px;padding:0 6px;border-radius:var(--r-tag);background:var(--wash);color:var(--mute);white-space:nowrap}
@@ -97,7 +96,7 @@ th{padding:0;text-align:left;font-size:12.5px;font-weight:500;color:var(--soft);
 th button{width:100%;min-height:38px;padding:8px 12px;border:0;background:none;text-align:left;font-weight:500;color:inherit}
 td{padding:8px 12px;border-top:1px solid var(--line);vertical-align:middle}
 td strong{font-weight:500}
-tbody tr[data-id]{cursor:pointer}tbody tr[data-id]:hover{background:var(--card)}
+tbody tr[data-id]{cursor:pointer}tbody tr[data-id]:hover{background:var(--hover)}
 td select{min-height:28px;padding:2px 8px;border:1px solid var(--line2);border-radius:var(--r-ctl);font-size:13px;font-weight:500;background:var(--field)}
 td select.s-needs{background:var(--pinkbg);border-color:var(--pinkline);color:var(--pinkT)}
 td select.s-done{color:var(--soft)}
@@ -135,7 +134,7 @@ td select.s-done{color:var(--soft)}
 .ci .grid2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .ci .grid2>:only-child{grid-column:1/-1}
 @media(max-width:760px){.ci .grid2{grid-template-columns:minmax(0,1fr)}}
-.ci h2 .n{font:400 semi-expanded 13px var(--text);color:var(--soft);margin-left:4px;font-variant-numeric:tabular-nums}
+.ci h2 .n{font:400 13px var(--text);color:var(--soft);margin-left:4px;font-variant-numeric:tabular-nums}
 .ci .panel.pk{background:var(--pinkbg);border-color:var(--pinkline)}.ci .panel.pk h2{color:var(--pinkT)}
 .ci .panel.pk .cl li{border-color:var(--pinkline)}
 .secs{padding-block:0}.sec{padding:16px 0}.sec+.sec{border-top:1px solid var(--line)}
@@ -178,9 +177,9 @@ td select.s-done{color:var(--soft)}
 .rc strong{display:block;font-weight:500}.rc.on strong{color:var(--soft)}.rm small{display:block;color:var(--soft);font-size:12.5px}
 
 /* ---- task panel ---- */
-.ov{position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.62);opacity:0;pointer-events:none;transition:opacity .18s}
+.ov{position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .18s}
 .dr{position:fixed;top:0;right:0;bottom:0;z-index:10;width:min(440px,100%);padding:20px;overflow:auto;background:var(--bg);border-left:1px solid var(--line);transform:translateX(100%);visibility:hidden;transition:transform .2s ease,visibility .2s}
-.open .ov{opacity:1;pointer-events:auto}.open .dr{transform:none;visibility:visible;box-shadow:-16px 0 40px rgba(0,0,0,.5)}
+.open .ov{opacity:1;pointer-events:auto}.open .dr{transform:none;visibility:visible;box-shadow:-16px 0 40px rgba(0,0,0,.1)}
 .dr h2{font-size:19px;margin-bottom:14px}
 .fld{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}.fld span{font-size:12.5px;font-weight:500;color:var(--mute)}
 .fld em{font-style:normal;color:var(--ink)}
@@ -198,7 +197,7 @@ td select.s-done{color:var(--soft)}
 .ft a,.ft .link{display:inline-flex;align-items:center;min-height:var(--h);padding:0;color:var(--soft);font-size:13px;text-align:left;text-underline-offset:2px}
 .toast{position:fixed;left:50%;bottom:20px;z-index:20;max-width:90vw;padding:9px 14px;border-radius:var(--r-ctl);background:var(--btn);color:var(--btnT);font-size:13.5px;font-weight:600;transform:translateX(-50%);opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
-#auth{min-height:100vh;display:grid;place-items:center;padding:24px 16px}
+#auth{min-height:100vh;display:grid;place-items:center;padding:24px 16px;background:var(--hover)}
 .authcard{width:min(400px,100%);padding:28px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-panel)}
 .authcard .brand{margin-bottom:14px}.authcard .brand img{height:26px}
 .authcard .lead{margin:0 0 18px;color:var(--mute)}
