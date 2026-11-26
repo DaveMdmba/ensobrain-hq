@@ -216,7 +216,7 @@ function describe(kind, id, method, old, data) {
     return null;
   }
   if (kind === 'leads') return id === '_meta' && method !== 'DELETE' ? 'refreshed the lead numbers from NOVA' : null;
-  if (kind === 'meta') return id === 'checkin' && method !== 'DELETE' ? 'finished a check-in' : null;
+  if (kind === 'meta') return id === 'checkin' && method !== 'DELETE' ? (data && data.undone ? 'undid the last check-in' : 'finished a check-in') : null;
   return null;
 }
 async function record(user, kind, id, method, old, data) {

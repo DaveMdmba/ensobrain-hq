@@ -15,8 +15,10 @@ const today=()=>new Date().toLocaleDateString('en-CA');
 const monday=d=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()-((x.getDay()+6)%7));return x.toLocaleDateString('en-CA')};
 const addDays=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toLocaleDateString('en-CA')};
 const fmt=d=>d?new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
+const fmtLong=d=>d?new Date(d+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}):'';
 let me=null,ready=false,pending=false,tasks=[],weeks=[],routine=[],leads=[],meta=[],log=[];
 let view='check-in',q='',own='all',area='all',sortK='due',sortD=1,editing=null,showOldDone=false;
+let routineOpen=false,showLog=false;
 let mode='cards';try{if(localStorage.getItem('hq-mode')==='list')mode='list'}catch{}
 
 // On phones the table turns into stacked cards; each cell needs its column label.
@@ -63,10 +65,9 @@ const dueHtml=t=>t.due?`<span class="due${overdue(t)?' late':''}">${overdue(t)?'
 const who=o=>o?`<span class="who ${o==='David'?'dv':'dk'}">${esc(o)}</span>`:'';
 const card=t=>`<article class="card" draggable="true" data-id="${esc(t.id)}" tabindex="0" aria-label="${esc(t.title)}"><h3>${esc(t.title)}</h3><div class="meta">${t.blocked?'<span class="tag blk">Blocked</span>':''}${t.area?`<span class="tag">${esc(t.area)}</span>`:''}${t.priority==='High'?'<span class="tag hi">High</span>':''}${dueHtml(t)}${who(t.owner)}</div><select class="mv" data-mv-id="${esc(t.id)}" aria-label="Move to another column"><option value="" selected disabled>Move to…</option>${ST.filter(x=>x[0]!==t.status).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></article>`;
 
-function kpis(){$('#kpis').hidden=view!=='board';if(view!=='board')return;const w=work(),wk=monday(today()),cur=weeks.find(x=>x.week===wk)||{};
+function kpis(){$('#kpis').hidden=view!=='board';if(view!=='board')return;const w=work(),wk=monday(today());
  const nd=w.filter(t=>t.status==='needs').length,od=w.filter(overdue).length,nb=w.filter(t=>t.blocked&&t.status!=='done').length;
- const pair=(a,b)=>(a===''||a==null?'–':a)+(b?` / ${b}`:'');
- const k=[['Needs David',nd,nd?'alert':'','needs'],['Blocked',nb,nb?'alertr':'','blocked'],['Overdue',od,od?'alert':'','late'],['Done this week',w.filter(t=>t.status==='done'&&t.doneAt>=wk).length,'',''],['DMs this week',pair(cur.dms,target(wk,'dmTarget')),'','dms'],['Calls booked',pair(cur.calls,target(wk,'callsTarget')),'','dms']];
+ const k=[['Needs David',nd,nd?'alert':'','needs'],['Blocked',nb,nb?'alertr':'','blocked'],['Overdue',od,od?'alertr':'','late'],['Done this week',w.filter(t=>t.status==='done'&&t.doneAt>=wk).length,'','']];
  $('#kpis').innerHTML=k.map(([l,v,c,go])=>`<button class="kpi ${c}" data-go="${go}"><b>${esc(v)}</b><span>${l}</span></button>`).join('')}
 function tabs(){const bd=ideas().length;
  $('#tabs').innerHTML=VIEWS.map(([k,l])=>`<a class="tab${view===k?' on':''}" href="#${k}">${l}${k==='brain-dump'&&bd?`<em>${bd}</em>`:''}</a>`).join('')}
@@ -89,11 +90,12 @@ function archived(){const a=tasks.filter(t=>t.archived);if(!a.length)return '';
 function brain(){const v=ideas().sort((a,b)=>(b.created||'').localeCompare(a.created||''));
  return `<div class="bd"><form class="bdf" id="bdf"><input name="t" placeholder="Dump an idea. It stays here until we decide it’s a priority." aria-label="New idea" autocomplete="off" maxlength="300"><button class="btn">Add</button></form>
  <ul class="bdl">${v.map(t=>`<li data-id="${esc(t.id)}"><div><strong>${esc(t.title)}</strong><span class="sub">${esc(t.owner||'')}${t.created?' · added '+esc(fmt(t.created.slice(0,10))):''}</span>${t.notes?`<p>${esc(t.notes)}</p>`:''}</div><div class="act"><button class="btn" data-promote="${esc(t.id)}">Make it a task</button><button class="btn ghost" data-open="${esc(t.id)}">Open</button></div></li>`).join('')||'<li class="empty">No ideas parked. Add one above.</li>'}</ul></div>`}
-function bars(label,f,tf){const w=weeks.slice().sort((a,b)=>a.week.localeCompare(b.week)).slice(-8);
+function bars(label,f,tf){const w=weeks.filter(x=>!(x[f]===''||x[f]==null)).sort((a,b)=>a.week.localeCompare(b.week)).slice(-8);if(w.length<2)return '';
  const max=Math.max(1,...w.map(x=>Math.max(+x[f]||0,target(x.week,tf))));
- return `<div class="panel"><h2>${label}</h2>${w.map(x=>{const v=+x[f]||0,t=target(x.week,tf);return `<div class="row"><span>${esc(fmt(x.week))}</span><div class="bar"><div class="fill" style="width:${(v/max*100).toFixed(1)}%"></div>${t?`<i class="tgt" style="left:calc(${(t/max*100).toFixed(1)}% - 1.5px)" title="Target ${t}"></i>`:''}</div><span class="v">${x[f]===''||x[f]==null?'–':esc(v)}${t?' / '+esc(t):''}</span></div>`}).join('')||'<p class="empty">No weeks yet.</p>'}<p class="sub">Pink mark = target.</p></div>`}
+ return `<div class="panel"><h2>${label}</h2>${w.map(x=>{const v=+x[f]||0,t=target(x.week,tf);return `<div class="row"><span>${esc(fmt(x.week))}</span><div class="bar"><div class="fill" style="width:${(v/max*100).toFixed(1)}%"></div>${t?`<i class="tgt" style="left:calc(${(t/max*100).toFixed(1)}% - 1.5px)" title="Target ${t}"></i>`:''}</div><span class="v">${x[f]===''||x[f]==null?'–':esc(v)}${t?' / '+esc(t):''}</span></div>`}).join('')}${w.some(x=>target(x.week,tf))?'<p class="sub">The marker on each bar is the target.</p>':''}</div>`}
 function numbers(){const w=weeks.slice().sort((a,b)=>a.week.localeCompare(b.week));const F=[['dms','DM conversations'],['dmTarget','DM target'],['calls','Calls booked'],['callsTarget','Calls target']];
- return `<div class="grid2">${bars('DM conversations per week','dms','dmTarget')}${bars('Sales calls booked per week','calls','callsTarget')}</div>
+ const ch=bars('DM conversations per week','dms','dmTarget')+bars('Sales calls booked per week','calls','callsTarget');
+ return `${ch?`<div class="grid2">${ch}</div>`:''}
  <div class="wk"><table class="stack"><thead><tr><th><button tabindex="-1">Week of</button></th>${F.map(f=>`<th><button tabindex="-1">${f[1]}</button></th>`).join('')}<th><button tabindex="-1">Notes</button></th></tr></thead><tbody>${w.map(x=>`<tr><td><strong>${esc(fmt(x.week))}</strong></td>${F.map(([k,l])=>`<td><input type="number" min="0" inputmode="numeric" data-wid="${esc(x.id)}" data-f="${k}" value="${x[k]===''||x[k]==null?'':esc(x[k])}" aria-label="${l}"></td>`).join('')}<td><input data-wid="${esc(x.id)}" data-f="notes" value="${esc(x.notes||'')}" aria-label="Notes" maxlength="300"></td></tr>`).join('')}</tbody></table>
  <p><button class="btn ghost" id="addwk">+ Add next week</button></p></div>`}
 // Lead counts per pipeline stage, copied from NOVA by a scheduled check. Counts only: names stay in NOVA.
@@ -107,24 +109,31 @@ function leadsV(){const meta=leads.find(x=>x.id==='_meta')||{};const st=leads.fi
  <p class="sub">${esc(meta.total??st.reduce((a,x)=>a+val(x)+(+x.lost||0),0))} leads in total · ${esc(meta.won??0)} won · ${esc(meta.lost??0)} lost${when?' · checked '+esc(when):''}</p>
  ${url?`<p><a class="btn linkbtn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in NOVA</a></p>`:''}
  <p class="sub">Counts only. Names and details stay in NOVA.</p></div>`}
-// One screen for the call: wins since the last check-in, what needs David, what is stuck, and the numbers.
+// One screen for the call. What is waiting on David comes first; finishing the check-in comes last.
 function checkinV(){const w=work(),wk=monday(today()),cur=weeks.find(x=>x.week===wk),prev=weeks.filter(x=>x.week<wk).sort((a,b)=>a.week.localeCompare(b.week)).pop();
  const ci=meta.find(x=>x.id==='checkin')||{},since=ci.last||new Date(Date.now()-7*864e5).toISOString();
  const wins=w.filter(t=>t.status==='done'&&(t.doneTs?t.doneTs>=since:(t.doneAt||'')>=since.slice(0,10)));
  const needs=byDue(w.filter(t=>t.status==='needs')),stuck=w.filter(t=>t.blocked&&t.status!=='done'),late=byDue(w.filter(overdue));
  const blank=v=>v===''||v==null;
  const li=t=>`<li><button class="rowbtn" data-open="${esc(t.id)}"><span>${esc(t.title)}</span>${who(t.owner)}</button>${t.blocked&&t.blocker?`<small>${esc(t.blocker)}</small>`:''}</li>`;
- const list=(title,items,empty,cls)=>`<section class="panel ${cls}"><h2>${title} <span class="n">${items.length}</span></h2>${items.length?`<ul class="cl">${items.map(li).join('')}</ul>`:`<p class="empty">${empty}</p>`}</section>`;
+ const list=(key,title,items,empty,cls)=>`<section class="panel ${cls}${items.length?'':' mt'}" data-p="${key}"><h2>${title} <span class="n">${items.length}</span></h2>${items.length?`<ul class="cl">${items.map(li).join('')}</ul>`:`<p class="empty">${empty}</p>`}</section>`;
+ // The bar only appears once there is a target to measure against.
  const goal=(label,f,tf)=>{const v=cur?cur[f]:'',t=target(wk,tf),pct=t?Math.min(100,(+v||0)/t*100):0;
-  return `<div class="goal"><div class="gh"><strong>${label}</strong><span class="gv"><b>${blank(v)?'–':esc(v)}</b>${cur?`<label>of <input type="number" min="0" inputmode="numeric" class="tg" data-wid="${esc(cur.id)}" data-f="${tf}" value="${blank(cur[tf])?'':esc(cur[tf])}" placeholder="${t&&blank(cur[tf])?esc(t):'target'}" aria-label="${label} target"></label>`:''}</span></div><div class="bar"><div class="fill" style="width:${pct.toFixed(1)}%"></div></div>${prev&&!blank(prev[f])?`<p class="sub">Last week: ${esc(prev[f])}</p>`:''}</div>`};
- const st=leads.filter(x=>x.id!=='_meta').sort((a,b)=>(a.order||0)-(b.order||0)).map(x=>({n:(+x.open||0)+(+x.won||0),name:x.name})).filter(x=>x.n>0);
- return `<div class="ci"><div class="cihead"><p>${ci.last?'Last check-in: '+esc(fmtDT(ci.last))+'.':'No check-in saved yet, so this shows the last 7 days.'}</p><button class="btn" id="cidone">Finish check-in</button></div>
+  return `<div class="goal"><div class="gh"><strong>${label}</strong><span class="gv"><b>${blank(v)?'–':esc(v)}</b>${t?'of '+esc(t):''}</span></div>${t?`<div class="bar"><div class="fill" style="width:${pct.toFixed(1)}%"></div></div>`:''}<div class="gm"><span>${prev&&!blank(prev[f])?'Last week: '+esc(prev[f]):''}</span>${cur?`<label>Target <input type="number" min="0" inputmode="numeric" class="tg" data-wid="${esc(cur.id)}" data-f="${tf}" value="${blank(cur[tf])?'':esc(cur[tf])}" placeholder="${t&&blank(cur[tf])?esc(t):'none'}" aria-label="${label} target"></label>`:''}</div></div>`};
+ // Lead counts are saved each time a check-in is finished, so the next one can show what moved.
+ let snap=null;try{snap=ci.snap?JSON.parse(ci.snap):null}catch{}
+ const st=leads.filter(x=>x.id!=='_meta').sort((a,b)=>(a.order||0)-(b.order||0)).map(x=>{const n=(+x.open||0)+(+x.won||0);return {n,name:x.name,d:snap&&typeof snap[x.id]==='number'?n-snap[x.id]:0}}).filter(x=>x.n>0||x.d);
+ const undo=ci.undo&&ci.last&&Date.now()-new Date(ci.last)<6e5;
+ return `<div class="ci">
+ <div class="cig">${list('needs','Needs David',needs,'Nothing is waiting on David.','pk')}<div class="stk">${list('blocked','Blocked',stuck,'Nothing is blocked.',stuck.length?'rd':'')}${list('late','Overdue',late,'Nothing is overdue.',late.length?'rd':'')}${list('wins','Wins',wins,'Nothing finished since the last check-in.','wide')}</div></div>
  <div class="grid2"><section class="panel"><h2>This week’s numbers</h2>${goal('DM conversations','dms','dmTarget')}${goal('Sales calls booked','calls','callsTarget')}${cur?'':`<p><button class="btn ghost" data-addweek="${esc(wk)}">Start this week’s numbers</button></p>`}</section>
- ${st.length?`<section class="panel"><h2>Leads</h2><ul class="mini">${st.map(x=>`<li><span>${esc(x.name)}</span><b>${esc(x.n)}</b></li>`).join('')}</ul><p><a class="link" href="#numbers">See all leads</a></p></section>`:''}</div>
- <div class="cig">${list('Wins',wins,'Nothing finished since the last check-in.','')}${list('Needs David',needs,'Nothing is waiting on David.','pk')}${list('Blocked',stuck,'Nothing is blocked.','rd')}${list('Overdue',late,'Nothing is overdue.','')}</div>
- <section class="panel"><h2>Recent activity</h2>${log.length?`<ul class="act2">${log.slice(0,12).map(x=>`<li><span><strong>${esc(x.who)}</strong> ${esc(x.text)}</span><small>${esc(ago(x.at))}</small></li>`).join('')}</ul>`:'<p class="empty">Nothing yet.</p>'}</section>${routineBox()}</div>`}
+ ${st.length?`<section class="panel"><h2>Leads</h2><ul class="mini">${st.map(x=>`<li><span>${esc(x.name)}</span><span class="lv">${x.d?`<em>${x.d>0?'+':'−'}${Math.abs(x.d)}</em>`:''}<b>${esc(x.n)}</b></span></li>`).join('')}</ul><p class="sub">${snap?'+ / − is the change since the last check-in. ':''}<a href="#numbers">See the full pipeline</a></p></section>`:''}</div>
+ ${log.length?`<section class="panel"><h2>Recent activity</h2><ul class="act2">${log.slice(0,showLog?25:4).map(x=>`<li><span><strong>${esc(x.who)}</strong> ${esc(x.text)}</span><small>${esc(ago(x.at))}</small></li>`).join('')}</ul>${log.length>4?`<button class="link" data-morelog>${showLog?'Show less':'Show more'}</button>`:''}</section>`:''}
+ <div class="cihead"><p>${ci.last?'Last check-in: '+esc(fmtDT(ci.last))+'.':'No check-in saved yet, so Wins shows the last 7 days.'}${undo?' <button class="link" id="ciundo">Undo</button>':''}</p><button class="btn" id="cidone">Finish check-in</button></div>
+ ${routineBox()}</div>`}
+// Dave's own routine, folded away so it doesn't crowd the call.
 function routineBox(){const t=today(),r=routine.slice().sort((a,b)=>(a.order||0)-(b.order||0));if(!r.length)return '';
- return `<section class="panel"><h2>Routine checks <span class="n">${r.filter(x=>x.lastDone===t).length} of ${r.length} done today</span></h2><ul class="rm">${r.map(x=>{const d=x.lastDone===t;return `<li><span><strong>${esc(x.name)}</strong><small>${esc(x.freq)}${x.lastDone?' · last done '+esc(fmt(x.lastDone)):''}</small></span><button class="btn ghost" data-rid="${esc(x.id)}">${d?'Done today ✓':'Mark done'}</button></li>`}).join('')}</ul></section>`}
+ return `<details class="panel rtd" id="rtd"${routineOpen?' open':''}><summary><h2>Dave’s routine checks</h2><span class="n">${r.filter(x=>x.lastDone===t).length} of ${r.length} done today</span></summary><ul class="rm">${r.map(x=>{const d=x.lastDone===t;return `<li><button class="rc${d?' on':''}" data-rid="${esc(x.id)}" aria-pressed="${d}"><i></i><span><strong>${esc(x.name)}</strong><small>${esc(x.freq)}${x.lastDone?' · last done '+esc(fmt(x.lastDone)):''}</small></span></button></li>`}).join('')}</ul></details>`}
 
 function render(){if(!ready)return;kpis();tabs();
  // Don't redraw under someone who is typing; redraw when they leave the field.
@@ -145,10 +154,10 @@ function openDrawer(id,preset){const t=id?tasks.find(x=>x.id===id):{title:'',sta
  <label class="fld"><span>Owner</span><select name="owner">${opt([['Dave','Dave'],['David','David']],t.owner)}</select></label>
  <label class="fld"><span>Area</span><select name="area">${opt([['',''],...AREAS.map(a=>[a,a])],t.area||'')}</select></label>
  <label class="fld"><span>Priority</span><select name="priority">${opt([['',''],...PRI.map(p=>[p,p])],t.priority||'')}</select></label>
- <label class="fld"><span>Due</span><input type="date" name="due" value="${esc(t.due||'')}"></label></div>
+ <label class="fld"><span>Due <em id="duehint">${t.due?'· '+esc(fmtLong(t.due)):''}</em></span><input type="date" name="due" value="${esc(t.due||'')}"></label></div>
  <label class="fld"><span>Notes</span><textarea name="notes" rows="5" maxlength="3000">${esc(t.notes||'')}</textarea></label>
  <label class="chk"><input type="checkbox" name="blocked"${t.blocked?' checked':''}><span>Blocked: can’t move forward right now</span></label>
- <label class="fld"><span>What’s blocking it?</span><input name="blocker" maxlength="200" value="${esc(t.blocker||'')}" placeholder="For example: waiting for the new form questions"></label>
+ <label class="fld" id="blkf"${t.blocked?'':' hidden'}><span>What’s blocking it?</span><input name="blocker" maxlength="200" value="${esc(t.blocker||'')}" placeholder="For example: waiting for the new form questions"></label>
  ${t.updated?`<p class="sub">Last updated ${esc(new Date(t.updated).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}</p>`:''}
  <div class="drb"><button class="btn">Save</button><button type="button" class="btn ghost" data-close>Close</button><span class="sp"></span>${id?'<button type="button" class="btn ghost" id="del">Archive</button>':''}</div></form>`;
  $('#shell').classList.add('open');setTimeout(()=>{const f=$('#df [name=title]');if(f&&!id)f.focus()},60)}
@@ -181,16 +190,23 @@ async function boot(){if(linkCode&&linkName)await enter(linkCode,linkName);else 
 
 // ---- events ----
 document.addEventListener('click',async e=>{const el=e.target;
- if(el.id==='signout'){try{await api('POST','/api/logout')}catch{}showAuth();return}
- const kp=el.closest('.kpi');if(kp){const g=kp.dataset.go;if(g==='dms')location.hash='numbers';else if(g==='needs'||g==='doing'){own='all';area='all';q='';if(location.hash==='#board'||!location.hash)render();location.hash='board'}else if(g==='blocked'){location.hash='check-in'}else if(g==='late'){mode='list';sortK='due';sortD=1;render()}return}
+ if(el.id==='signout'){const reset=()=>{delete el.dataset.sure;el.textContent='Sign out of this device'};
+  if(!el.dataset.sure){el.dataset.sure='1';el.textContent='Tap again to sign out. You’ll need your private link to get back in.';clearTimeout(el.h);el.h=setTimeout(reset,6000);return}
+  clearTimeout(el.h);reset();try{await api('POST','/api/logout')}catch{}showAuth();return}
+ const kp=el.closest('.kpi');if(kp){const g=kp.dataset.go;if(g==='needs'){own='all';area='all';q='';mode='cards';render();document.querySelector('.col[data-st=needs]')?.scrollIntoView({behavior:'smooth',inline:'start',block:'nearest'})}else if(g==='blocked'){location.hash='check-in'}else if(g==='late'){mode='list';sortK='due';sortD=1;render()}return}
  if(el.closest('[data-close]')||el.id==='ov'){closeDrawer();return}
  if(el.id==='del'){const id=editing;if(await saveTask(id,{archived:true,archivedAt:today()})){closeDrawer();toast('Archived. You can restore it from the Board’s List layout.')}return}
  const rs=el.closest('[data-restore]');if(rs){if(await saveTask(rs.dataset.restore,{archived:false,archivedAt:''}))toast('Restored');return}
- if(el.id==='cidone'){const ci=meta.find(x=>x.id==='checkin')||{};if(await write(()=>api('PUT','/api/items/meta/checkin',{last:new Date().toISOString(),prev:ci.last||''})))toast('Check-in saved. Wins start fresh from now.');return}
+ if(el.id==='cidone'){const ci=meta.find(x=>x.id==='checkin')||{};
+  const snap=JSON.stringify(Object.fromEntries(leads.filter(x=>x.id!=='_meta').map(x=>[x.id,(+x.open||0)+(+x.won||0)])));
+  if(await write(()=>api('PUT','/api/items/meta/checkin',{last:new Date().toISOString(),prev:ci.last||'',snap,prevSnap:ci.snap||'',undo:true})))toast('Check-in saved. Wins start fresh from now.');return}
+ if(el.id==='ciundo'){const ci=meta.find(x=>x.id==='checkin')||{};
+  if(await write(()=>api('PUT','/api/items/meta/checkin',{last:ci.prev||'',prev:'',snap:ci.prevSnap||'',prevSnap:'',undo:false,undone:true})))toast('Check-in undone.');return}
  const aw=el.closest('[data-addweek]');if(aw){const wk=aw.dataset.addweek;await write(()=>api('PUT','/api/items/weeks/w'+wk,newWeek(wk)));return}
  const o=el.closest('[data-own]');if(o){own=o.dataset.own;render();return}
  const md=el.closest('[data-mode]');if(md){mode=md.dataset.mode;try{localStorage.setItem('hq-mode',mode)}catch{}render();return}
  if(el.closest('[data-olddone]')){showOldDone=!showOldDone;render();return}
+ if(el.closest('[data-morelog]')){showLog=!showLog;render();return}
  const nw=el.closest('[data-new]');if(nw){openDrawer(null,nw.dataset.new);return}
  const s=el.closest('[data-sort]');if(s){const k=s.dataset.sort;if(sortK===k)sortD*=-1;else{sortK=k;sortD=1}render();return}
  const pr=el.closest('[data-promote]');if(pr){if(await saveTask(pr.dataset.promote,{status:'todo'}))toast('Moved to To do on the board');return}
@@ -205,6 +221,8 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#shell').classLi
  if(e.key==='Enter'&&e.target.matches('.card'))openDrawer(e.target.dataset.id)});
 document.addEventListener('input',e=>{if(e.target.id==='q'){q=e.target.value.trim().toLowerCase();render()}});
 document.addEventListener('change',async e=>{const el=e.target;
+ if(el.form&&el.form.id==='df'){if(el.name==='blocked'){const b=$('#blkf');b.hidden=!el.checked;if(el.checked)b.querySelector('input').focus()}
+  if(el.name==='due')$('#duehint').textContent=el.value?'· '+fmtLong(el.value):'';return}
  if(el.id==='area'){area=el.value;render();return}
  if(el.dataset.stId){el.className='s-'+el.value;await saveTask(el.dataset.stId,{status:el.value});return}
  if(el.dataset.mvId){if(el.value)await saveTask(el.dataset.mvId,{status:el.value});return}
@@ -224,10 +242,11 @@ document.addEventListener('dragend',e=>{const c=e.target.closest&&e.target.close
 document.addEventListener('dragover',e=>{const col=e.target.closest&&e.target.closest('.col');if(!col||!dragId)return;e.preventDefault();document.querySelectorAll('.col.over').forEach(x=>x!==col&&x.classList.remove('over'));col.classList.add('over')});
 document.addEventListener('drop',async e=>{const col=e.target.closest&&e.target.closest('.col');if(!col||!dragId)return;e.preventDefault();col.classList.remove('over');
  const id=dragId,st=col.dataset.st;dragId=null;const t=tasks.find(x=>x.id===id);if(t&&t.status!==st)await saveTask(id,{status:st})});
+document.addEventListener('toggle',e=>{if(e.target.id==='rtd')routineOpen=e.target.open},true);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&me)refresh().catch(()=>{})});
 
 const pick=()=>{let h=location.hash.slice(1);if(h==='table')mode='list';h=ALIAS[h]||h;return VIEWS.some(v=>v[0]===h)?h:'check-in'};
-const route=()=>{view=pick();render()};
+const route=()=>{const v=pick(),moved=v!==view;view=v;render();if(moved)scrollTo(0,0)};
 window.addEventListener('hashchange',route);
 view=pick();
 boot();
