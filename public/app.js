@@ -7,12 +7,12 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const ST=[['todo','To do'],['doing','In progress'],['needs','Needs David'],['done','Done']];
 const AREAS=['Instagram','Funnel & NOVA','Sales calls','Help Bank','Admin','Strategy'];
 const PRI=['High','Medium','Low'];
-const VIEWS=[['board','Board'],['table','Table'],['brain-dump','Brain dump'],['numbers','Weekly numbers'],['routine','Routine']];
+const VIEWS=[['board','Board'],['table','Table'],['brain-dump','Brain dump'],['leads','Leads'],['numbers','Weekly numbers'],['routine','Routine']];
 const today=()=>new Date().toLocaleDateString('en-CA');
 const monday=d=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()-((x.getDay()+6)%7));return x.toLocaleDateString('en-CA')};
 const addDays=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toLocaleDateString('en-CA')};
 const fmt=d=>d?new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
-let me=null,ready=false,pending=false,tasks=[],weeks=[],routine=[];
+let me=null,ready=false,pending=false,tasks=[],weeks=[],routine=[],leads=[];
 let view='board',q='',own='all',area='all',sortK='due',sortD=1,editing=null,confirmDel=false;
 
 // On phones the table turns into stacked cards; each cell needs its column label.
@@ -30,7 +30,7 @@ async function api(method,url,body){
 let seq=0;
 async function refresh(){const n=++seq;
  try{const s=await api('GET','/api/state');if(n!==seq)return true;
-  me=s.me;tasks=s.tasks;weeks=s.weeks;routine=s.routine;ready=true;$('#me').textContent=me.name;render();
+  me=s.me;tasks=s.tasks;weeks=s.weeks;routine=s.routine;leads=s.leads||[];ready=true;$('#me').textContent=me.name;render();
   if(editing&&!tasks.some(t=>t.id===editing))closeDrawer();return true}
  catch(e){if(e.status===401){showAuth();return false}throw e}}
 // Runs one change, then reloads the board. Returns true when it saved.
@@ -79,6 +79,17 @@ function numbers(){const w=weeks.slice().sort((a,b)=>a.week.localeCompare(b.week
  return `<div class="grid2">${bars('DM conversations per week','dms','dmTarget')}${bars('Sales calls booked per week','calls','callsTarget')}</div>
  <div class="wk"><table class="stack"><thead><tr><th><button tabindex="-1">Week of</button></th>${F.map(f=>`<th><button tabindex="-1">${f[1]}</button></th>`).join('')}<th><button tabindex="-1">Notes</button></th></tr></thead><tbody>${w.map(x=>`<tr><td><strong>${esc(fmt(x.week))}</strong></td>${F.map(([k,l])=>`<td><input type="number" min="0" inputmode="numeric" data-wid="${esc(x.id)}" data-f="${k}" value="${x[k]===''||x[k]==null?'':esc(x[k])}" aria-label="${l}"></td>`).join('')}<td><input data-wid="${esc(x.id)}" data-f="notes" value="${esc(x.notes||'')}" aria-label="Notes" maxlength="300"></td></tr>`).join('')}</tbody></table>
  <p><button class="btn ghost" id="addwk">+ Add next week</button></p></div>`}
+// Lead counts per pipeline stage, copied from NOVA by a scheduled check. Counts only: names stay in NOVA.
+function leadsV(){const meta=leads.find(x=>x.id==='_meta')||{};const st=leads.filter(x=>x.id!=='_meta').sort((a,b)=>(a.order||0)-(b.order||0));
+ if(!st.length)return '<p class="empty">No lead numbers yet. They are copied from NOVA before each check-in.</p>';
+ const val=x=>(+x.open||0)+(+x.won||0),max=Math.max(1,...st.map(val));
+ const url=typeof meta.url==='string'&&meta.url.startsWith('https://')?meta.url:'';
+ const when=meta.checked?new Date(meta.checked).toLocaleString('en-GB',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+ return `<div class="panel lp"><h2>${esc(meta.pipeline||'Sales pipeline')}</h2>
+ ${st.map(x=>`<div class="lrow"><span class="ln"><strong>${esc(x.name)}</strong>${x.hint?`<small>${esc(x.hint)}</small>`:''}</span><div class="bar"><div class="fill" style="width:${(val(x)/max*100).toFixed(1)}%"></div></div><span class="v">${esc(val(x))}</span></div>`).join('')}
+ <p class="sub">${esc(meta.total??st.reduce((a,x)=>a+val(x)+(+x.lost||0),0))} leads in total · ${esc(meta.won??0)} won · ${esc(meta.lost??0)} lost${when?' · checked '+esc(when):''}</p>
+ ${url?`<p><a class="btn linkbtn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in NOVA</a></p>`:''}
+ <p class="sub">Counts only. Names and details stay in NOVA.</p></div>`}
 function routineV(){const t=today();return `<ul class="rt">${routine.slice().sort((a,b)=>(a.order||0)-(b.order||0)).map(r=>{const d=r.lastDone===t;return `<li class="${d?'ok':''}"><div><strong>${esc(r.name)}</strong> <span class="sub">· ${esc(r.freq)}</span></div><p>${esc(r.covers)}</p><span class="sub">${r.lastDone?'Last done '+esc(fmt(r.lastDone)):'Not logged yet'}</span><button class="btn${d?' ghost':''}" data-rid="${esc(r.id)}">${d?'Done today ✓ (undo)':'Mark done today'}</button></li>`}).join('')||'<li class="empty">No routine items yet.</li>'}</ul>`}
 
 function render(){if(!ready)return;kpis();tabs();
@@ -88,7 +99,7 @@ function render(){if(!ready)return;kpis();tabs();
  if(inMain&&!quick&&a.matches('input:not([type=search]),textarea')){pending=true;return}pending=false;
  const hadQ=a&&a.id==='q',pos=hadQ?a.selectionStart:0;
  let h='';
- if(view==='board')h=toolbar()+board();else if(view==='table')h=toolbar()+table();else if(view==='brain-dump')h=brain();else if(view==='numbers')h=numbers();else h=routineV();
+ if(view==='board')h=toolbar()+board();else if(view==='table')h=toolbar()+table();else if(view==='brain-dump')h=brain();else if(view==='leads')h=leadsV();else if(view==='numbers')h=numbers();else h=routineV();
  $('#main').innerHTML=h;if(hadQ){const i=$('#q');if(i){i.focus();i.setSelectionRange(pos,pos)}}
  if(quick){const i=quick==='bdf'?$('#bdf input'):$(`.qa[data-st="${quick}"] input`);if(i)i.focus()}}
 

@@ -21,7 +21,7 @@ const ACCESS_CODE = process.env.ACCESS_CODE || '';
 const CODE_OK = ACCESS_CODE.length >= 12;
 const SESSION_DAYS = 365;
 const COOKIE = 'hq_session';
-const KINDS = new Set(['tasks', 'weeks', 'routine']);
+const KINDS = new Set(['tasks', 'weeks', 'routine', 'leads']);
 const ID_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
 const MAX_BODY = 64 * 1024;
@@ -250,7 +250,7 @@ async function handle(req, res) {
   if (!user) return send(req, res, 401, { error: 'Open the board with your private link first.' });
 
   if (p === '/api/state' && method === 'GET') {
-    const state = { version, me: user, tasks: [], weeks: [], routine: [] };
+    const state = { version, me: user, tasks: [], weeks: [], routine: [], leads: [] };
     for (const row of await store.listItems()) {
       if (KINDS.has(row.kind)) state[row.kind].push({ ...row.data, id: row.id });
     }

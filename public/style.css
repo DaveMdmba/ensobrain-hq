@@ -118,3 +118,9 @@ table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-bl
 .whoami input:checked+span{background:var(--btn);color:var(--btnT);border-color:var(--btn)}
 .whoami input:focus-visible+span{outline:3px solid var(--pink);outline-offset:2px}
 .authcard .hint{margin:10px 0 0;text-align:center}
+.lp{max-width:860px}
+.lrow{display:grid;grid-template-columns:minmax(120px,240px) minmax(0,1fr) 44px;gap:12px;align-items:center;margin:12px 0;font-size:14px}
+.lrow .ln small{display:block;color:var(--soft);font-size:12.5px}
+.lrow .v{text-align:right;font:600 20px/1 Oswald,"Arial Narrow",sans-serif}
+.linkbtn{display:inline-flex;align-items:center;text-decoration:none}
+@media(max-width:600px){.lrow{grid-template-columns:minmax(0,1fr) 44px}.lrow .bar{grid-column:1/-1;grid-row:2}}
