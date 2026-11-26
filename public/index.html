@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>David × Dave HQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head><body>
+
+<section id="auth" hidden>
+  <div class="authcard">
+    <p class="eb">Ensobrain · Team HQ</p>
+    <h1>David × Dave HQ</h1>
+    <form id="enterf">
+      <p class="lead" id="enterlead">Enter the team passcode to open the board.</p>
+      <label class="fld" id="codefld"><span>Team passcode</span><input type="password" name="code" autocomplete="off" maxlength="300"></label>
+      <fieldset class="whoami"><legend>Who are you?</legend>
+        <label><input type="radio" name="name" value="Dave" required><span>Dave</span></label>
+        <label><input type="radio" name="name" value="David"><span>David</span></label>
+      </fieldset>
+      <button class="btn">Open the board</button>
+      <p class="hint">This device will be remembered, so you only do this once.</p>
+    </form>
+    <p class="err" id="autherr" role="alert"></p>
+  </div>
+</section>
+
+<div id="app" hidden>
+  <header class="hd">
+    <div class="top">
+      <div><p class="eb">Ensobrain · Team HQ</p><h1>David × Dave HQ</h1><p>One clear step at a time. Tasks, ideas and weekly numbers, live for both of us.</p></div>
+      <div class="right">
+        <div class="me"><span id="me"></span><button class="btn ghost" id="signout">Sign out</button></div>
+        <div class="live off" id="live"><i></i><span>Connecting…</span></div>
+      </div>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <nav class="tabs" id="tabs" aria-label="Views"></nav>
+  </header>
+  <main id="main"><p class="empty">Loading the board…</p></main>
+  <div id="shell"><div class="ov" id="ov"></div><aside class="dr" id="dr" aria-label="Task details"></aside></div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+<script src="/app.js"></script>
+</body></html>
