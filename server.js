@@ -81,7 +81,7 @@ function securityHeaders(req) {
   const h = {
     'Content-Security-Policy':
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-      "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; " +
+      "font-src https://fonts.gstatic.com; img-src 'self' data: https://images.squarespace-cdn.com; connect-src 'self'; " +
       "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
