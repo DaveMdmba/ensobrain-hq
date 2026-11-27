@@ -21,10 +21,24 @@ const ACCESS_CODE = process.env.ACCESS_CODE || '';
 const CODE_OK = ACCESS_CODE.length >= 12;
 const SESSION_DAYS = 365;
 const COOKIE = 'hq_session';
-const KINDS = new Set(['tasks', 'weeks', 'routine', 'leads', 'meta']);
+const KINDS = new Set(['tasks', 'weeks', 'routine', 'leads', 'meta', 'docs']);
 const ID_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
-const MAX_BODY = 64 * 1024;
+const MAX_BODY = 256 * 1024;
+// Docs hold long text (a report, an SOP); every other field stays short.
+const LONG_FIELDS = { docs: new Set(['body', 'whatsapp', 'checks', 'nums']) };
+const LONG_MAX = 60000;
+// David reads approved docs and can reply to them; drafts are Dave's until he approves them.
+const DAVID_DOC_FIELDS = new Set(['reaction', 'feedback', 'feedbackAt', 'seenAt']);
+const isDavid = (user) => /^david$/i.test((user && user.name) || '');
+const hiddenFrom = (user, row) => row.kind === 'docs' && isDavid(user) && row.data.status !== 'approved';
+function forUser(user, row) {
+  if (row.kind === 'docs' && isDavid(user)) {
+    const { checks, ...rest } = row.data;
+    return rest;
+  }
+  return row.data;
+}
 
 let store;
 if (process.env.DATABASE_URL) {
@@ -154,15 +168,16 @@ async function startSession(req, name) {
 }
 
 // Item bodies are flat objects of short strings, numbers and booleans.
-function cleanData(body) {
+function cleanData(body, kind) {
   const keys = Object.keys(body);
-  if (keys.length > 24) return null;
+  if (keys.length > 32) return null;
+  const long = LONG_FIELDS[kind];
   const out = {};
   for (const k of keys) {
     if (!KEY_RE.test(k)) return null;
     const v = body[k];
     if (typeof v === 'string') {
-      if (v.length > 4000) return null;
+      if (v.length > (long && long.has(k) ? LONG_MAX : 4000)) return null;
       out[k] = v;
     } else if (typeof v === 'number') {
       if (!Number.isFinite(v)) return null;
@@ -217,6 +232,17 @@ function describe(kind, id, method, old, data) {
   }
   if (kind === 'leads') return id === '_meta' && method !== 'DELETE' ? 'refreshed the lead numbers from NOVA' : null;
   if (kind === 'meta') return id === 'checkin' && method !== 'DELETE' ? (data && data.undone ? 'undid the last check-in' : 'finished a check-in') : null;
+  if (kind === 'docs') {
+    // Drafts are private to Dave, so only sharing and replies make it into the log David sees.
+    const title = `“${short((data && data.title) || (old && old.title) || 'a doc')}”`;
+    const was = old && old.status;
+    if (method === 'DELETE') return was === 'approved' ? `removed ${title}` : null;
+    if (data && 'status' in data && data.status === 'approved' && was !== 'approved') return `shared ${title}`;
+    if (data && 'status' in data && data.status !== 'approved' && was === 'approved') return `moved ${title} back to draft`;
+    if (data && data.feedback && (!old || data.feedback !== old.feedback)) return `replied on ${title}`;
+    if (data && data.reaction === 'up' && (!old || old.reaction !== 'up')) return `gave ${title} a 👍`;
+    return null;
+  }
   return null;
 }
 async function record(user, kind, id, method, old, data) {
@@ -300,9 +326,9 @@ async function handle(req, res) {
   if (!user) return send(req, res, 401, { error: 'Open the board with your private link first.' });
 
   if (p === '/api/state' && method === 'GET') {
-    const state = { version, me: user, tasks: [], weeks: [], routine: [], leads: [], meta: [] };
+    const state = { version, me: user, tasks: [], weeks: [], routine: [], leads: [], meta: [], docs: [] };
     for (const row of await store.listItems()) {
-      if (KINDS.has(row.kind)) state[row.kind].push({ ...row.data, id: row.id });
+      if (KINDS.has(row.kind) && !hiddenFrom(user, row)) state[row.kind].push({ ...forUser(user, row), id: row.id });
     }
     state.log = await store.listLog(25);
     return send(req, res, 200, state);
@@ -310,7 +336,8 @@ async function handle(req, res) {
 
   // A full copy of the board's data, as a file to keep.
   if (p === '/api/export' && method === 'GET') {
-    const body = JSON.stringify({ exportedAt: new Date().toISOString(), items: await store.listItems() }, null, 2);
+    const items = (await store.listItems()).filter((row) => !hiddenFrom(user, row)).map((row) => ({ ...row, data: forUser(user, row) }));
+    const body = JSON.stringify({ exportedAt: new Date().toISOString(), items }, null, 2);
     res.writeHead(200, {
       ...securityHeaders(req),
       'Content-Type': 'application/json; charset=utf-8',
@@ -343,6 +370,21 @@ async function handle(req, res) {
 
     const old = id ? await store.getItem(kind, id) : null;
 
+    // David can only react to and reply on docs Dave has shared.
+    if (kind === 'docs' && isDavid(user) && method !== 'GET') {
+      if (method !== 'PATCH' || !id || !old || old.status !== 'approved') {
+        return send(req, res, 403, { error: 'Only Dave can write or change docs.' });
+      }
+      const patch = cleanData(await readJson(req), kind);
+      if (!patch || !Object.keys(patch).every((k) => DAVID_DOC_FIELDS.has(k))) {
+        return send(req, res, 403, { error: 'You can react to and reply on a doc, not edit it.' });
+      }
+      await store.mergeItem(kind, id, patch, user.name);
+      await record(user, kind, id, 'PATCH', old, patch);
+      broadcast();
+      return send(req, res, 200, { id });
+    }
+
     if (method === 'DELETE' && id) {
       await store.deleteItem(kind, id);
       await record(user, kind, id, 'DELETE', old, null);
@@ -351,7 +393,7 @@ async function handle(req, res) {
     }
 
     if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
-      const data = cleanData(await readJson(req));
+      const data = cleanData(await readJson(req), kind);
       if (!data) return send(req, res, 400, { error: 'That change could not be saved (unexpected content).' });
       delete data.id;
       if (method === 'POST' && !id) {

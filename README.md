@@ -3,6 +3,24 @@
 Shared task board for David Amor (Ensobrain) and Dave: board, table, brain dump,
 weekly numbers and routine checks. Every change shows up live for everyone signed in.
 
+## Docs (reports, check-in notes, how-tos, decisions)
+
+The Docs view keeps written updates in one place. Docs are rows in `hq_items` with
+`kind = 'docs'`. Fields: `type` (report / checkin / sop / decision / note), `title`,
+`period` (the week's Monday, for reports), `status` (draft / approved), `body` (Markdown:
+`#` headings, `-` bullets, `**bold**`, `| tables |`, `>` callouts), `whatsapp` (short
+message for David), `checks` (notes for Dave before approving), `nums` (JSON string with
+`dms`, `calls`, `held`, `won`), plus `created`, `updated`, `approvedAt`, `approvedBy`,
+`seenAt`, `reaction`, `feedback`, `feedbackAt`, `archived`.
+
+- Drafts are only sent to Dave's devices; David never receives them, nor any `checks`.
+- Approving (Dave only) shares the doc with David, saves the week's numbers with it,
+  and copies a WhatsApp message with a link to the doc.
+- David can open shared docs, give a thumbs-up and reply; he can't edit or delete them.
+- "Download PDF" prints just the branded page.
+- A scheduled task can add a draft by inserting a `docs` row directly in the database;
+  open pages pick it up within two minutes.
+
 ## How it works
 
 - `server.js`: Node HTTP server (no framework). Serves the page, a JSON API, and a

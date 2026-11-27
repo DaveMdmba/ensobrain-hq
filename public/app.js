@@ -8,7 +8,7 @@ const ST=[['todo','To do'],['doing','In progress'],['needs','Needs David'],['don
 const AREAS=['Instagram','Funnel & NOVA','Sales calls','Help Bank','Admin','Strategy'];
 const PRI=['High','Medium','Low'];
 const STL=Object.fromEntries([...ST,['braindump','Brain dump']]);
-const VIEWS=[['check-in','Check-in'],['board','Board'],['numbers','Numbers'],['brain-dump','Brain dump']];
+const VIEWS=[['check-in','Check-in'],['board','Board'],['numbers','Numbers'],['docs','Docs'],['brain-dump','Brain dump']];
 // Older links still work: the list, leads and routine screens now live inside these four.
 const ALIAS={table:'board',leads:'numbers',routine:'check-in'};
 const today=()=>new Date().toLocaleDateString('en-CA');
@@ -16,9 +16,10 @@ const monday=d=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()-((x.getDa
 const addDays=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toLocaleDateString('en-CA')};
 const fmt=d=>d?new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}):'';
 const fmtLong=d=>d?new Date(d+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}):'';
-let me=null,ready=false,pending=false,tasks=[],weeks=[],routine=[],leads=[],meta=[],log=[];
+let me=null,ready=false,pending=false,tasks=[],weeks=[],routine=[],leads=[],meta=[],log=[],docs=[];
 let view='check-in',q='',own='all',area='all',sortK='due',sortD=1,editing=null,showOldDone=false;
 let routineOpen=false,showLog=false;
+let docId='',docType='all',docEditing=false,editNext='';const seenMarked=new Set();
 let mode='cards';try{if(localStorage.getItem('hq-mode')==='list')mode='list'}catch{}
 
 // On phones the table turns into stacked cards; each cell needs its column label.
@@ -36,7 +37,7 @@ async function api(method,url,body){
 let seq=0;
 async function refresh(){const n=++seq;
  try{const s=await api('GET','/api/state');if(n!==seq)return true;
-  me=s.me;tasks=s.tasks;weeks=s.weeks;routine=s.routine;leads=s.leads||[];meta=s.meta||[];log=s.log||[];ready=true;$('#me').textContent=me.name;render();
+  me=s.me;tasks=s.tasks;weeks=s.weeks;routine=s.routine;leads=s.leads||[];meta=s.meta||[];log=s.log||[];docs=s.docs||[];ready=true;$('#me').textContent=me.name;render();
   if(editing&&!tasks.some(t=>t.id===editing))closeDrawer();return true}
  catch(e){if(e.status===401){showAuth();return false}throw e}}
 // Runs one change, then reloads the board. Returns true when it saved.
@@ -70,8 +71,8 @@ function kpis(){$('#kpis').hidden=view!=='board';if(view!=='board')return;const 
  const nd=w.filter(t=>t.status==='needs').length,od=w.filter(overdue).length,nb=w.filter(t=>t.blocked&&t.status!=='done').length;
  const k=[['Needs David',nd,nd?'alert':'','needs'],['Blocked',nb,nb?'alertr':'','blocked'],['Overdue',od,od?'alertr':'','late'],['Done this week',w.filter(t=>t.status==='done'&&t.doneAt>=wk).length,'','']];
  $('#kpis').innerHTML=k.map(([l,v,c,go])=>`<button class="kpi ${c}" data-go="${go}"><b>${esc(v)}</b><span>${l}</span></button>`).join('')}
-function tabs(){const bd=ideas().length;
- $('#tabs').innerHTML=VIEWS.map(([k,l])=>`<a class="tab${view===k?' on':''}" href="#${k}">${l}${k==='brain-dump'&&bd?`<em>${bd}</em>`:''}</a>`).join('')}
+function tabs(){const bd=ideas().length,dn=isD()?shared().filter(d=>!d.seenAt).length:drafts().length;
+ $('#tabs').innerHTML=VIEWS.map(([k,l])=>`<a class="tab${view===k?' on':''}" href="#${k}">${l}${k==='brain-dump'&&bd?`<em>${bd}</em>`:''}${k==='docs'&&dn?`<em class="dn">${dn}</em>`:''}</a>`).join('')}
 function toolbar(){return `<div class="tool"><input type="search" id="q" placeholder="Search tasks and notes" value="${esc(q)}" aria-label="Search">
 <div class="seg" role="group" aria-label="Owner">${['all','Dave','David'].map(o=>`<button data-own="${o}" class="${own===o?'on':''}">${o==='all'?'Everyone':o}</button>`).join('')}</div>
 <select id="area" aria-label="Area"><option value="all">All areas</option>${AREAS.map(a=>`<option${area===a?' selected':''}>${esc(a)}</option>`).join('')}</select>
@@ -134,22 +135,116 @@ function checkinV(){const w=work(),wk=monday(today()),cur=weeks.find(x=>x.week==
  <div class="grid2"><section class="panel"><h2>This week’s numbers</h2><div class="goals">${goal('DM conversations','dms','dmTarget')}${goal('Sales calls booked','calls','callsTarget')}</div>${cur?'':`<p><button class="btn ghost" data-addweek="${esc(wk)}">Start this week’s numbers</button></p>`}</section>
  ${st.length?`<section class="panel"><h2>Leads</h2><ul class="mini">${st.map(x=>`<li><span>${esc(x.name)}</span><span class="lv">${x.d?`<em>${x.d>0?'+':'−'}${Math.abs(x.d)}</em>`:''}<b>${esc(x.n)}</b></span></li>`).join('')}</ul><p class="sub">${snap?'+ / − is the change since the last check-in. ':''}<a href="#numbers">See the full pipeline</a></p></section>`:''}</div>
  <div class="grid2">${list('wins','Wins',wins,'Nothing finished since the last check-in.','')}${act}</div>
+ ${docsPanel()}
  <div class="panel cihead"><p>${ci.last?'Last check-in: '+esc(fmtDT(ci.last))+'.':'No check-in saved yet, so Wins shows the last 7 days.'}${undo?' <button class="link" id="ciundo">Undo</button>':''}</p><button class="btn" id="cidone">Finish check-in</button></div>
  ${routineBox()}</div>`}
 // Dave's own routine, folded away so it doesn't crowd the call.
 function routineBox(){const t=today(),r=routine.slice().sort((a,b)=>(a.order||0)-(b.order||0));if(!r.length)return '';
  return `<details class="panel rtd" id="rtd"${routineOpen?' open':''}><summary><h2>Dave’s routine checks</h2><span class="n">${r.filter(x=>x.lastDone===t).length} of ${r.length} done today</span></summary><ul class="rm">${r.map(x=>{const d=x.lastDone===t;return `<li><button class="rc${d?' on':''}" data-rid="${esc(x.id)}" aria-pressed="${d}"><i></i><span><strong>${esc(x.name)}</strong><small>${esc(x.freq)}${x.lastDone?' · last done '+esc(fmt(x.lastDone)):''}</small></span></button></li>`}).join('')}</ul></details>`}
 
+// ---- docs: reports, check-in notes, how-tos and decisions in one place ----
+// Dave (or Claude on his behalf) writes a draft; only Dave sees drafts. Approving shares it with David,
+// who can open it, give it a thumbs-up and reply. Every doc shows in the Ensobrain page style and prints to PDF.
+const LOGO='https://images.squarespace-cdn.com/content/v1/65145e8e30a0aa674ddf151b/392c6acf-1991-4997-bf42-f0ec719e6684/Ensobrain.jpg?format=500w';
+const DT=[['report','Report'],['checkin','Check-in notes'],['sop','How-to'],['decision','Decision'],['note','Note']];
+const DTL=Object.fromEntries(DT);
+const isD=()=>/^david$/i.test(me?.name||'');
+const liveDocs=()=>docs.filter(d=>!d.archived);
+const drafts=()=>liveDocs().filter(d=>d.status!=='approved');
+const shared=()=>liveDocs().filter(d=>d.status==='approved');
+const nums=d=>{try{const n=JSON.parse(d.nums||'{}');return n&&typeof n==='object'&&!Array.isArray(n)?n:{}}catch{return {}}};
+const docDay=d=>d.period||(d.approvedAt||d.created||'').slice(0,10);
+const newestFirst=(a,b)=>docDay(b).localeCompare(docDay(a))||(b.approvedAt||b.updated||'').localeCompare(a.approvedAt||a.updated||'');
+const fmtYear=d=>d?new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
+const dayOf=iso=>iso?new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'';
+const NUMS=[['dms','DM conversations'],['calls','Calls booked'],['held','Sales calls held'],['won','New clients']];
+const docLink=d=>location.origin+'/#docs/'+encodeURIComponent(d.id);
+const waText=d=>`${(d.whatsapp||'').trim()||`*${d.title||'New doc'}*`}\n\nFull ${d.type==='report'?'report':'doc'} on the board: ${docLink(d)}`;
+// A small, safe Markdown reader: everything is escaped first, then a few marks become formatting.
+function md(src){const L=String(src||'').replace(/\r/g,'').split('\n');let out='',para=[],list=null,tbl=[];
+ const inl=s=>esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/(^|[\s(])_([^_]+)_(?=[\s).,!?:;]|$)/g,'$1<em>$2</em>').replace(/\[([^\]]+)\]\((https:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+ const cells=r=>r.replace(/^\s*\|/,'').replace(/\|\s*$/,'').split('|').map(c=>c.trim());
+ const flush=()=>{if(para.length){out+=`<p>${para.map(inl).join('<br>')}</p>`;para=[]}
+  if(list){out+=`<${list.t}>${list.i.map(x=>`<li>${inl(x)}</li>`).join('')}</${list.t}>`;list=null}
+  if(tbl.length){const rows=tbl.filter(r=>!/^\s*\|?\s*:?-{2,}/.test(r)).map(cells);const [h,...b]=rows;
+   out+=`<div class="tw"><table><thead><tr>${h.map(c=>`<th>${inl(c)}</th>`).join('')}</tr></thead><tbody>${b.map(r=>`<tr>${r.map(c=>`<td>${inl(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;tbl=[]}};
+ for(const raw of L){const l=raw.trimEnd();let m;
+  if(!l.trim()){flush();continue}
+  if(/^\s*\|.*\|\s*$/.test(l)){if(!tbl.length)flush();tbl.push(l);continue}else if(tbl.length)flush();
+  if(m=l.match(/^(#{1,4})\s+(.*)$/)){flush();const n=Math.min(4,m[1].length+1);out+=`<h${n}>${inl(m[2])}</h${n}>`;continue}
+  if(/^\s*(-{3,}|\*{3,})\s*$/.test(l)){flush();out+='<hr>';continue}
+  if(m=l.match(/^>\s?(.*)$/)){flush();out+=`<blockquote>${inl(m[1])}</blockquote>`;continue}
+  if(m=l.match(/^\s*[-*•]\s+(.*)$/)){if(para.length||(list&&list.t!=='ul'))flush();list=list||{t:'ul',i:[]};list.i.push(m[1]);continue}
+  if(m=l.match(/^\s*\d+[.)]\s+(.*)$/)){if(para.length||(list&&list.t!=='ol'))flush();list=list||{t:'ol',i:[]};list.i.push(m[1]);continue}
+  if(list)flush();para.push(l.trim())}
+ flush();return out}
+const typeTag=t=>`<span class="tag dt-${esc(t||'note')}">${esc(DTL[t]||'Note')}</span>`;
+function numStrip(d,cls){const n=nums(d),got=NUMS.filter(([k])=>!(n[k]===''||n[k]==null));if(!got.length)return '';
+ return `<div class="${cls}">${got.map(([k,l])=>`<div><b>${esc(n[k])}</b><span>${l}</span></div>`).join('')}</div>`}
+function docItem(d){const D=isD(),draft=d.status!=='approved';
+ const when=draft?'Draft · saved '+ago(d.updated||d.created||new Date().toISOString()):'Shared '+dayOf(d.approvedAt);
+ const state=draft?'':D?(d.seenAt?'':' <b class="new">New</b>'):(d.feedback?' · <strong>David replied</strong>':d.reaction==='up'?' · David 👍':d.seenAt?' · Seen by David':' · Not opened yet');
+ return `<li><a class="drow" href="#docs/${encodeURIComponent(d.id)}"><span class="dtl"><strong>${esc(d.title||'Untitled')}</strong><small>${typeTag(d.type)}${d.period?`<span>Week of ${esc(fmt(d.period))}</span>`:''}<span>${esc(when)}${state}</span></small></span>${numStrip(d,'chips')}</a></li>`}
+// Approved reports with numbers become a simple week-by-week trend.
+function docTrend(){const r=shared().filter(d=>d.type==='report'&&d.period).sort((a,b)=>a.period.localeCompare(b.period)).slice(-8);
+ const rows=f=>r.filter(d=>!(nums(d)[f]===''||nums(d)[f]==null));
+ const one=(label,f)=>{const w=rows(f);if(w.length<2)return '';const max=Math.max(1,...w.map(d=>+nums(d)[f]||0));
+  return `<div class="panel"><h2>${label}</h2>${w.map(d=>{const v=+nums(d)[f]||0;return `<div class="row"><span>${esc(fmt(d.period))}</span><div class="bar"><div class="fill" style="width:${(v/max*100).toFixed(1)}%"></div></div><span class="v">${esc(v)}</span></div>`}).join('')}</div>`};
+ const h=one('DM conversations, from shared reports','dms')+one('Calls booked, from shared reports','calls');return h?`<div class="grid2">${h}</div>`:''}
+function docsV(){const D=isD(),v=liveDocs().filter(d=>docType==='all'||d.type===docType);
+ const dr=D?[]:v.filter(d=>d.status!=='approved').sort(newestFirst),sh=v.filter(d=>d.status==='approved').sort(newestFirst);
+ const count=t=>liveDocs().filter(d=>(t==='all'||d.type===t)&&(!D||d.status==='approved')).length;
+ return `<div class="docs"><div class="tool"><div class="seg" role="group" aria-label="Doc type">${[['all','All'],...DT].filter(([k])=>k==='all'||count(k)).map(([k,l])=>`<button data-dtype="${k}" class="${docType===k?'on':''}">${l}</button>`).join('')}</div><span class="sp"></span>${D?'':'<button class="btn" id="newdoc">+ New doc</button>'}</div>
+ ${dr.length?`<section class="panel drp"><h2>Drafts waiting for your OK <span class="n">${dr.length}</span></h2><p class="sub">Only you can see drafts. Open one, change anything you like, then approve it to share it with David.</p><ul class="dl">${dr.map(docItem).join('')}</ul></section>`:''}
+ ${docType==='all'||docType==='report'?docTrend():''}
+ <section class="panel"><h2>${D?'From Dave':'Shared with David'} <span class="n">${sh.length}</span></h2>${sh.length?`<ul class="dl">${sh.map(docItem).join('')}</ul>`:`<p class="empty">${D?'Nothing here yet. Reports and notes from Dave will appear here.':'Nothing shared yet. Approved docs appear here, newest first.'}</p>`}</section></div>`}
+function docForm(d){const n=nums(d);
+ return `<div class="dbar"><a class="link" href="#docs">← All docs</a></div><form id="docf" class="paper edit" data-id="${esc(d.id)}"><h2 class="eh">Edit ${esc((DTL[d.type]||'doc').toLowerCase())}</h2>
+ <label class="fld"><span>Title</span><input name="title" maxlength="200" value="${esc(d.title||'')}" required></label>
+ <div class="f2"><label class="fld"><span>Type</span><select name="type">${DT.map(([k,l])=>`<option value="${k}"${(d.type||'note')===k?' selected':''}>${l}</option>`).join('')}</select></label>
+ <label class="fld"><span>Week of (Monday, for reports)</span><input type="date" name="period" value="${esc(d.period||'')}"></label></div>
+ <label class="fld"><span>Content <em class="hintmd">Headings: # · Bullets: - · Bold: **text** · Tables: | a | b |</em></span><textarea name="body" class="mdin" rows="22" maxlength="60000">${esc(d.body||'')}</textarea></label>
+ <fieldset class="nf"><legend>Numbers for the week (leave blank if not sure)</legend><div class="f4">${NUMS.map(([k,l])=>`<label class="fld"><span>${l}</span><input type="number" min="0" inputmode="numeric" name="n_${k}" value="${n[k]===''||n[k]==null?'':esc(n[k])}"></label>`).join('')}</div></fieldset>
+ <label class="fld"><span>WhatsApp version <em class="hintmd">Short message for David. A link to this doc is added at the end.</em></span><textarea name="whatsapp" rows="8" maxlength="6000">${esc(d.whatsapp||'')}</textarea></label>
+ <label class="fld"><span>Checks before approving <em class="hintmd">Only you see these. They disappear once the doc is shared.</em></span><textarea name="checks" rows="4" maxlength="6000">${esc(d.checks||'')}</textarea></label>
+ <div class="drb"><button class="btn">Save</button><button type="button" class="btn ghost" id="doccancel">Cancel</button><span class="sp"></span><button type="button" class="btn ghost" id="docarch">Archive</button></div></form>`}
+function docV(){const d=docs.find(x=>x.id===docId),D=isD();
+ if(!d||d.archived)return `<div class="dbar"><a class="link" href="#docs">← All docs</a></div><p class="empty">That doc isn’t here. It may have been archived${D?' or not shared yet':''}.</p>`;
+ if(docEditing&&!D)return docForm(d);
+ const draft=d.status!=='approved';
+ const acts=D?`<button class="btn ghost" id="docprint">Download PDF</button>`:draft?`<button class="btn ghost" id="docedit">Edit</button><button class="btn" id="docok">Approve and share with David</button>`:`<button class="btn ghost" data-copywa>Copy for WhatsApp</button><button class="btn ghost" id="docprint">Download PDF</button><button class="btn ghost" id="docedit">Edit</button><button class="link" id="docback">Move back to draft</button>`;
+ const banner=!D&&draft?`<section class="panel drp nb"><h2>Draft: only you can see this</h2><p class="sub">Read it through, edit anything, then approve. Approving shares it with David on the board and copies a WhatsApp message to send him.</p>${(d.checks||'').trim()?`<div class="chk2"><strong>Checks before you approve</strong><div class="mdx">${md(d.checks)}</div></div>`:''}</section>`:'';
+ const fb=draft?'':D?`<section class="panel fb"><h2>Your reply to Dave</h2><p><button class="btn ghost${d.reaction==='up'?' on':''}" id="thumb" aria-pressed="${d.reaction==='up'}">👍 ${d.reaction==='up'?'You liked this':'Looks good'}</button></p><form id="fbf"><label class="fld"><span>Anything to add, change or ask?</span><textarea name="fb" rows="3" maxlength="3000" placeholder="Dave sees this on the board.">${esc(d.feedback||'')}</textarea></label><button class="btn">${d.feedback?'Update reply':'Send reply'}</button>${d.feedbackAt?` <span class="sub">Sent ${esc(fmtDT(d.feedbackAt))}</span>`:''}</form></section>`
+  :`<section class="panel fb"><h2>David</h2><ul class="mini"><li><span>Opened</span><b class="sm">${d.seenAt?esc(fmtDT(d.seenAt)):'Not yet'}</b></li>${d.reaction==='up'?'<li><span>Reaction</span><b class="sm">👍</b></li>':''}</ul>${d.feedback?`<blockquote class="reply">${esc(d.feedback)}<small>${d.feedbackAt?esc(fmtDT(d.feedbackAt)):''}</small></blockquote>`:''}</section>`;
+ const wa=!D?`<details class="panel wa"${draft?'':' open'}><summary><h2>WhatsApp version</h2></summary><pre class="wap">${esc(waText(d))}</pre>${draft?'<p class="sub">You can copy this once the doc is shared, so the link works for David.</p>':'<button class="btn ghost" data-copywa>Copy</button>'}</details>`:'';
+ return `<div class="dbar"><a class="link" href="#docs">← All docs</a><span class="sp"></span>${acts}</div>${banner}
+ <article class="paper"><header class="ph"><img src="${LOGO}" alt="Ensobrain" referrerpolicy="no-referrer"><span class="kick">${esc(DTL[d.type]||'Note')}${d.period?' · Week of '+esc(fmtYear(d.period)):''}</span></header>
+ <h1>${esc(d.title||'Untitled')}</h1><p class="by">Prepared by Dave for David Amor${d.approvedAt?' · '+esc(dayOf(d.approvedAt)):draft?' · Draft':''}</p>
+ ${numStrip(d,'nstrip')}<div class="mdx">${md(d.body)||'<p class="sub">Nothing written yet.</p>'}</div>
+ <footer class="pf"><span>Ensobrain HQ</span><span>${draft?'Draft, not shared':'Shared with David'}</span></footer></article>
+ <div class="grid2 after">${fb}${wa}</div>`}
+// On the check-in screen: the latest shared report, and any drafts waiting for Dave.
+function docsPanel(){const D=isD(),dr=D?[]:drafts().sort(newestFirst),last=shared().sort(newestFirst)[0];if(!dr.length&&!last)return '';
+ return `<section class="panel docp"><h2>Docs</h2><ul class="cl">${dr.map(d=>`<li><a class="rowbtn" href="#docs/${encodeURIComponent(d.id)}"><span>${esc(d.title||'Untitled')}</span><span class="tag dft">Draft · needs your OK</span></a></li>`).join('')}${last?`<li><a class="rowbtn" href="#docs/${encodeURIComponent(last.id)}"><span>${esc(last.title||'Untitled')}</span><small class="sub">Shared ${esc(dayOf(last.approvedAt))}${D&&!last.seenAt?' · new':''}</small></a></li>`:''}</ul><p class="sub"><a href="#docs">All docs</a></p></section>`}
+// David opening a shared doc marks it as seen, so Dave knows it was read.
+function markSeen(){if(view!=='docs'||!docId||!isD())return;const d=docs.find(x=>x.id===docId);if(!d||d.status!=='approved'||d.seenAt||seenMarked.has(d.id))return;
+ seenMarked.add(d.id);api('PATCH','/api/items/docs/'+encodeURIComponent(d.id),{seenAt:new Date().toISOString()}).then(()=>refresh()).catch(()=>{})}
+async function copyText(t){try{await navigator.clipboard.writeText(t);return true}catch{try{const a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';document.body.append(a);a.select();const ok=document.execCommand('copy');a.remove();return ok}catch{return false}}}
+const saveDoc=(id,data)=>write(()=>api('PATCH','/api/items/docs/'+encodeURIComponent(id),{...data,updated:new Date().toISOString()}));
+
 function render(){if(!ready)return;kpis();tabs();
+ // Never redraw an open doc editor: live updates would wipe what is being written.
+ if(view==='docs'&&docEditing&&$('#docf')?.dataset.id===docId)return;
  // Don't redraw under someone who is typing; redraw when they leave the field.
  const a=document.activeElement,inMain=a&&$('#main').contains(a);
  const quick=inMain&&a.matches('.qa input,#bdf input')&&!a.value?(a.closest('form').dataset.st||'bdf'):null;
  if(inMain&&!quick&&a.matches('input:not([type=search]),textarea')){pending=true;return}pending=false;
  const hadQ=a&&a.id==='q',pos=hadQ?a.selectionStart:0;
  let h='';
- if(view==='check-in')h=checkinV();else if(view==='board')h=toolbar()+(mode==='list'?table():board());else if(view==='numbers')h=`${numbers()}<div class="lsec">${leadsV()}</div>`;else h=brain();
+ if(view==='check-in')h=checkinV();else if(view==='docs')h=docId?docV():docsV();else if(view==='board')h=toolbar()+(mode==='list'?table():board());else if(view==='numbers')h=`${numbers()}<div class="lsec">${leadsV()}</div>`;else h=brain();
  $('#main').innerHTML=h;if(hadQ){const i=$('#q');if(i){i.focus();i.setSelectionRange(pos,pos)}}
- if(quick){const i=quick==='bdf'?$('#bdf input'):$(`.qa[data-st="${quick}"] input`);if(i)i.focus()}}
+ if(quick){const i=quick==='bdf'?$('#bdf input'):$(`.qa[data-st="${quick}"] input`);if(i)i.focus()}
+ markSeen()}
 
 function openDrawer(id,preset){const t=id?tasks.find(x=>x.id===id):{title:'',status:preset||'todo',owner:preset==='needs'?'David':myOwner(),area:'',priority:'',due:'',notes:''};if(!t)return;
  editing=id||null;const opt=(arr,v)=>arr.map(o=>`<option value="${esc(o[0])}"${v===o[0]?' selected':''}>${esc(o[1])}</option>`).join('');
@@ -208,6 +303,22 @@ document.addEventListener('click',async e=>{const el=e.target;
  if(el.id==='ciundo'){const ci=meta.find(x=>x.id==='checkin')||{};
   if(await write(()=>api('PUT','/api/items/meta/checkin',{last:ci.prev||'',prev:'',snap:ci.prevSnap||'',prevSnap:'',undo:false,undone:true})))toast('Check-in undone.');return}
  const aw=el.closest('[data-addweek]');if(aw){const wk=aw.dataset.addweek;await write(()=>api('PUT','/api/items/weeks/w'+wk,newWeek(wk)));return}
+ // docs
+ const dty=el.closest('[data-dtype]');if(dty){docType=dty.dataset.dtype;render();return}
+ if(el.id==='newdoc'){try{const now=new Date().toISOString();const r=await api('POST','/api/items/docs',{type:'note',title:'Untitled doc',status:'draft',body:'',created:now,createdBy:me.name,updated:now});editNext=r.id;await refresh();location.hash='docs/'+encodeURIComponent(r.id)}catch{toast('Couldn’t create the doc. Try again.')}return}
+ if(el.id==='docedit'){docEditing=true;render();scrollTo(0,0);return}
+ if(el.id==='doccancel'){docEditing=false;render();return}
+ if(el.id==='docprint'){window.print();return}
+ if(el.id==='docarch'){const id=$('#docf')?.dataset.id;if(!id)return;if(!el.dataset.sure){el.dataset.sure='1';el.textContent='Tap again to archive';setTimeout(()=>{if(el.isConnected){delete el.dataset.sure;el.textContent='Archive'}},5000);return}
+  if(await saveDoc(id,{archived:true,archivedAt:today()})){docEditing=false;toast('Archived');location.hash='docs'}return}
+ if(el.closest('[data-copywa]')){const d=docs.find(x=>x.id===docId);if(d)toast(await copyText(waText(d))?'Copied. Paste it into WhatsApp for David.':'Couldn’t copy. Select the text and copy it yourself.');return}
+ if(el.id==='docok'){const d=docs.find(x=>x.id===docId);if(!d)return;
+  // Copy first, while the click still counts as a user action for the clipboard.
+  const copied=copyText(waText(d));const n=nums(d);
+  if(d.type==='report'&&d.period&&!Object.keys(n).length){const w=weeks.find(x=>x.week===d.period);if(w){if(!(w.dms===''||w.dms==null))n.dms=w.dms;if(!(w.calls===''||w.calls==null))n.calls=w.calls}}
+  if(await saveDoc(d.id,{status:'approved',approvedAt:new Date().toISOString(),approvedBy:me.name,nums:JSON.stringify(n),checks:''}))toast(await copied?'Shared with David. WhatsApp message copied: paste it to him.':'Shared with David. Use “Copy for WhatsApp” to message him.');return}
+ if(el.id==='docback'){const d=docs.find(x=>x.id===docId);if(d&&await saveDoc(d.id,{status:'draft',approvedAt:'',approvedBy:''}))toast('Back to draft. David can’t see it now.');return}
+ if(el.id==='thumb'){const d=docs.find(x=>x.id===docId);if(d)await write(()=>api('PATCH','/api/items/docs/'+encodeURIComponent(d.id),{reaction:d.reaction==='up'?'':'up'}));return}
  const o=el.closest('[data-own]');if(o){own=o.dataset.own;render();return}
  const md=el.closest('[data-mode]');if(md){mode=md.dataset.mode;try{localStorage.setItem('hq-mode',mode)}catch{}render();return}
  if(el.closest('[data-olddone]')){showOldDone=!showOldDone;render();return}
@@ -240,6 +351,11 @@ document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target
   if(await saveTask(editing,d)){closeDrawer();toast('Saved')}return}
  if(f.classList.contains('qa')){const v=f.t.value.trim();if(!v)return;const st=f.dataset.st;f.t.value='';
   await saveTask(null,{title:v,status:st,owner:st==='needs'?'David':myOwner(),area:area==='all'?'':area,priority:'',due:'',notes:''});return}
+ if(f.id==='docf'){const d=Object.fromEntries(new FormData(f));const title=(d.title||'').trim();if(!title){toast('Give the doc a title');return}
+  const n={};for(const [k] of NUMS){const v=d['n_'+k];if(v!==''&&v!=null)n[k]=Math.max(0,Number(v)||0)}
+  if(await saveDoc(f.dataset.id,{title,type:d.type||'note',period:d.period||'',body:d.body||'',whatsapp:d.whatsapp||'',checks:d.checks||'',nums:JSON.stringify(n)})){docEditing=false;render();scrollTo(0,0);toast('Saved')}return}
+ if(f.id==='fbf'){const d=docs.find(x=>x.id===docId);const v=(f.fb.value||'').trim();if(!d||!v){toast('Write a reply first');return}
+  if(await write(()=>api('PATCH','/api/items/docs/'+encodeURIComponent(d.id),{feedback:v,feedbackAt:new Date().toISOString()})))toast('Sent. Dave will see it on the board.');return}
  if(f.id==='bdf'){const v=f.t.value.trim();if(!v)return;f.t.value='';await saveTask(null,{title:v,status:'braindump',owner:myOwner(),area:'',priority:'',due:'',notes:''})}});
 let dragId=null;
 document.addEventListener('dragstart',e=>{const c=e.target.closest&&e.target.closest('.card');if(!c)return;dragId=c.dataset.id;c.classList.add('dragging');e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',dragId)}catch{}});
@@ -249,9 +365,11 @@ document.addEventListener('drop',async e=>{const col=e.target.closest&&e.target.
  const id=dragId,st=col.dataset.st;dragId=null;const t=tasks.find(x=>x.id===id);if(t&&t.status!==st)await saveTask(id,{status:st})});
 document.addEventListener('toggle',e=>{if(e.target.id==='rtd')routineOpen=e.target.open},true);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&me)refresh().catch(()=>{})});
+// Scheduled tasks write straight to the database, so look for new drafts every couple of minutes.
+setInterval(()=>{if(me&&!document.hidden)refresh().catch(()=>{})},120000);
 
-const pick=()=>{let h=location.hash.slice(1);if(h==='table')mode='list';h=ALIAS[h]||h;return VIEWS.some(v=>v[0]===h)?h:'check-in'};
-const route=()=>{const v=pick(),moved=v!==view;view=v;render();if(moved)scrollTo(0,0)};
+const pick=()=>{let h=location.hash.slice(1);if(h==='table')mode='list';docId='';if(h.startsWith('docs/')){try{docId=decodeURIComponent(h.slice(5))}catch{docId=''}h='docs'}h=ALIAS[h]||h;return VIEWS.some(v=>v[0]===h)?h:'check-in'};
+const route=()=>{const before=view+'/'+docId,v=pick(),moved=v+'/'+docId!==before;view=v;if(moved){docEditing=!!docId&&editNext===docId;editNext=''}render();if(moved)scrollTo(0,0)};
 window.addEventListener('hashchange',route);
 view=pick();
 boot();
