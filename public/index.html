@@ -5,9 +5,9 @@
 <title>Ensobrain HQ</title>
 <link rel="icon" href="https://images.squarespace-cdn.com/content/v1/65145e8e30a0aa674ddf151b/dc573461-22ce-4b76-89f5-29f812e4eebf/favicon.ico?format=100w" referrerpolicy="no-referrer">
 <link rel="apple-touch-icon" href="https://images.squarespace-cdn.com/content/v1/65145e8e30a0aa674ddf151b/dc573461-22ce-4b76-89f5-29f812e4eebf/favicon.ico?format=100w" referrerpolicy="no-referrer">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#efefef">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head><body>
 
@@ -29,16 +29,25 @@
 </section>
 
 <div id="app" hidden>
-  <header class="hd">
-    <div class="top wrap">
-      <h1 class="brand"><img src="https://images.squarespace-cdn.com/content/v1/65145e8e30a0aa674ddf151b/392c6acf-1991-4997-bf42-f0ec719e6684/Ensobrain.jpg?format=500w" alt="Ensobrain" referrerpolicy="no-referrer"><span>HQ</span></h1>
-      <nav class="tabs" id="tabs" aria-label="Views"></nav>
-      <div class="right"><span id="me"></span><div class="live off" id="live"><i></i><span>Connecting…</span></div></div>
-    </div>
-  </header>
-  <div class="kpis wrap" id="kpis" hidden></div>
-  <main id="main" class="wrap"><p class="empty">Loading the board…</p></main>
-  <footer class="ft wrap"><a href="/api/export" download>Download a backup of the board</a><button class="link" id="signout">Sign out of this device</button></footer>
+  <aside class="rail" aria-label="Ensobrain HQ">
+    <a class="mark" href="#check-in" title="Ensobrain HQ" aria-label="Ensobrain HQ home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.6 6.2A8 8 0 1 0 19.9 13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></a>
+    <nav class="tabs" id="tabs" aria-label="Views"></nav>
+  </aside>
+  <div class="page">
+    <header class="hd">
+      <div class="top wrap">
+        <div class="hello"><p class="greet"><span aria-hidden="true">👋</span> <span id="greet">Hello</span>, <b id="me"></b></p><h1 id="vtitle">Check-in</h1></div>
+        <div class="right">
+          <img class="logo" src="https://images.squarespace-cdn.com/content/v1/65145e8e30a0aa674ddf151b/392c6acf-1991-4997-bf42-f0ec719e6684/Ensobrain.jpg?format=500w" alt="Ensobrain" referrerpolicy="no-referrer">
+          <div class="team" aria-label="Dave and David"><i class="dk" title="Dave">DM</i><i class="dv" title="David">DA</i></div>
+          <div class="live off" id="live"><i></i><span>Connecting…</span></div>
+        </div>
+      </div>
+    </header>
+    <div class="kpis wrap" id="kpis" hidden></div>
+    <main id="main" class="wrap"><p class="empty">Loading the board…</p></main>
+    <footer class="ft wrap"><a href="/api/export" download>Download a backup of the board</a><button class="link" id="signout">Sign out of this device</button></footer>
+  </div>
   <div id="shell"><div class="ov" id="ov"></div><aside class="dr" id="dr" aria-label="Task details"></aside></div>
 </div>
 

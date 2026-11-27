@@ -11,6 +11,14 @@ const STL=Object.fromEntries([...ST,['braindump','Brain dump']]);
 const VIEWS=[['check-in','Check-in'],['board','Board'],['numbers','Numbers'],['docs','Docs'],['brain-dump','Brain dump']];
 // Older links still work: the list, leads and routine screens now live inside these four.
 const ALIAS={table:'board',leads:'numbers',routine:'check-in'};
+// Line icons for the side rail (24px grid, drawn with the current text colour).
+const svg=d=>`<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICON={'check-in':svg('<rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/>'),
+ board:svg('<rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M9.2 4v16M14.8 4v16"/>'),
+ numbers:svg('<path d="M4 20h16"/><path d="M7.5 16.5v-5M12 16.5V7M16.5 16.5v-8"/>'),
+ docs:svg('<path d="M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h4.5M9 12.5h6M9 16h4"/>'),
+ 'brain-dump':svg('<path d="M12 3.5c.5 4.3 2.2 6 6.5 6.5-4.3.5-6 2.2-6.5 6.5-.5-4.3-2.2-6-6.5-6.5 4.3-.5 6-2.2 6.5-6.5z"/><path d="M18.5 16v4M16.5 18h4"/>')};
+const ARROW=svg('<path d="M8 16 16 8M9.5 8H16v6.5"/>');
 const today=()=>new Date().toLocaleDateString('en-CA');
 const monday=d=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()-((x.getDay()+6)%7));return x.toLocaleDateString('en-CA')};
 const addDays=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toLocaleDateString('en-CA')};
@@ -70,9 +78,11 @@ const card=t=>`<article class="card" draggable="true" data-id="${esc(t.id)}" tab
 function kpis(){$('#kpis').hidden=view!=='board';if(view!=='board')return;const w=work(),wk=monday(today());
  const nd=w.filter(t=>t.status==='needs').length,od=w.filter(overdue).length,nb=w.filter(t=>t.blocked&&t.status!=='done').length;
  const k=[['Needs David',nd,nd?'alert':'','needs'],['Blocked',nb,nb?'alertr':'','blocked'],['Overdue',od,od?'alertr':'','late'],['Done this week',w.filter(t=>t.status==='done'&&t.doneAt>=wk).length,'','']];
- $('#kpis').innerHTML=k.map(([l,v,c,go])=>`<button class="kpi ${c}" data-go="${go}"><b>${esc(v)}</b><span>${l}</span></button>`).join('')}
+ $('#kpis').innerHTML=k.map(([l,v,c,go])=>`<button class="kpi ${c}" data-go="${go}"><span>${l}</span><b>${esc(v)}</b>${go?`<i class="arr">${ARROW}</i>`:''}</button>`).join('')}
 function tabs(){const bd=ideas().length,dn=isD()?shared().filter(d=>!d.seenAt).length:drafts().length;
- $('#tabs').innerHTML=VIEWS.map(([k,l])=>`<a class="tab${view===k?' on':''}" href="#${k}">${l}${k==='brain-dump'&&bd?`<em>${bd}</em>`:''}${k==='docs'&&dn?`<em class="dn">${dn}</em>`:''}</a>`).join('')}
+ $('#tabs').innerHTML=VIEWS.map(([k,l])=>`<a class="tab${view===k?' on':''}" href="#${k}" aria-label="${l}"${view===k?' aria-current="page"':''}>${ICON[k]||''}<span class="tl">${l}</span>${k==='brain-dump'&&bd?`<em>${bd}</em>`:''}${k==='docs'&&dn?`<em class="dn">${dn}</em>`:''}</a>`).join('');
+ const t=$('#vtitle');if(t)t.textContent=(VIEWS.find(v=>v[0]===view)||[,''])[1];
+ const g=$('#greet');if(g){const h=new Date().getHours();g.textContent=h<12?'Morning':h<18?'Afternoon':'Evening'}}
 function toolbar(){return `<div class="tool"><input type="search" id="q" placeholder="Search tasks and notes" value="${esc(q)}" aria-label="Search">
 <div class="seg" role="group" aria-label="Owner">${['all','Dave','David'].map(o=>`<button data-own="${o}" class="${own===o?'on':''}">${o==='all'?'Everyone':o}</button>`).join('')}</div>
 <select id="area" aria-label="Area"><option value="all">All areas</option>${AREAS.map(a=>`<option${area===a?' selected':''}>${esc(a)}</option>`).join('')}</select>
